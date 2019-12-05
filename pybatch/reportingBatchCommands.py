@@ -406,8 +406,7 @@ class PatchPyBatchWithTimings(pybatch.PythonBatchCommandBase):
         with utils.utf8_open_for_read(self.path_to_py_batch) as rfd, utils.utf8_open_for_write(py_batch_with_timings, "w") as wfd:
             for line in rfd.readlines():
                 line_to_print = line
-                match = progress_comment_re.fullmatch(line)
-                if match:
+                if match := progress_comment_re.fullmatch(line):
                     progress_num = int(match.group("progress"))
                     if progress_num > last_progress_reported:  # some items have the same progress num, so report only the first
                         last_progress_reported = progress_num

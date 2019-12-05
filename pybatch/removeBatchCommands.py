@@ -184,8 +184,7 @@ class RemoveEmptyFolders(PythonBatchCommandBase, kwargs_defaults={"files_to_igno
             if len(existing_dirs) == 0:
                 num_ignored_files = 0
                 for filename in file_names:
-                    match = files_to_ignore_regex.match(filename)
-                    if match:
+                    if match := files_to_ignore_regex.match(filename):
                         num_ignored_files += 1
                     else:
                         break

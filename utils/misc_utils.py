@@ -439,23 +439,23 @@ def timing(f):
     import time
 
     def wrap(*args, **kwargs):
-        time1 = time.perf_counter()
+        time1 = time.perf_counter_ns()
         ret = f(*args, **kwargs)
-        time2 = time.perf_counter()
+        time2 = time.perf_counter_ns()
         if time1 != time2:
-            print('%s function took %0.3f ms' % (f.__name__, (time2-time1)*1000.0))
+            print(f'{f.__name__} function took {((time2 - time1) * 0.000001):.3f} ms')
         else:
-            print('%s function took apparently no time at all' % f.__name__)
+            print(f'{f.__name__} function took apparently no time at all')
         return ret
     return wrap
 
 
 @contextmanager
 def time_it(message):
-    time1 = time.time()
+    time1 = time.perf_counter_ns()
     yield
-    time2 = time.time()
-    print('%s took %0.3f ms' % (message, (time2 - time1) * 1000.0))
+    time2 = time.perf_counter_ns()
+    print(f'{message} took {((time2 - time1) * 0.000001):.3f} ms')
 
 
 # compile a list of regexs to one regex. regexs are ORed
