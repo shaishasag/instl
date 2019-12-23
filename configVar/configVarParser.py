@@ -58,7 +58,7 @@ class VarParseImpContext(object):
          self.positional_params,
          self.key_word_params,
          self.array_index_str,
-         self.array_index_int) = self.reset_yield_value
+         self.array_index_int) = ParseRetVal()
 
     def get_return_tuple(self) -> ParseRetVal:
         return ParseRetVal(self.literal_text,
