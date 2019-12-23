@@ -753,10 +753,16 @@ class InstlAdmin(InstlInstanceBase):
             batch_accum += IndexYamlReader(revision_instl_index_path)
             batch_accum += ShortIndexYamlCreator(checkout_folder_short_index_path)
             base_rev = int(config_vars["BASE_REPO_REV"])
+            if base_rev > 0:
+                batch_accum += SetBaseRevision(base_rev)
+            batch_accum += CreateRepoRevFile()
 
             if not skip_some_actions:
                 with batch_accum.sub_accum(Cd(revision_folder_path)) as sub_accum:
-                    sub_accum += Subprocess("aws", "s3", "cp", os.fspath(checkout_folder_short_index_path), "s3://$(S3_BUCKET_NAME)/$(REPO_NAME)/$(__CURR_REPO_FOLDER_HIERARCHY__)", "--content-type", 'text/plain')
+                    sub_accum += Subprocess("aws", "s3", "cp", os.fspath(checkout_folder_short_index_path), "s3://$(S3_BUCKET_NAME)/$(REPO_NAME)/$(__CURR_REPO_FOLDER_HIERARCHY__)/instl/"+checkout_folder_short_index_path.name, "--content-type", 'text/plain')
+                    repo_rev_file_path = config_vars["UPLOAD_REVISION_REPO_REV_FILE"].Path()
+                    sub_accum += Subprocess("aws", "s3", "cp", os.fspath(repo_rev_file_path), "s3://$(S3_BUCKET_NAME)/admin/"+repo_rev_file_path.name, "--content-type", 'text/plain')
+                    sub_accum += Subprocess("aws", "s3", "cp", os.fspath(repo_rev_file_path), "s3://$(S3_BUCKET_NAME)/$(REPO_NAME)/$(__CURR_REPO_FOLDER_HIERARCHY__)/instl/"+repo_rev_file_path.name, "--content-type", 'text/plain')
 
             self.write_batch_file(batch_accum)
             if bool(config_vars["__RUN_BATCH__"]):
@@ -847,8 +853,8 @@ class InstlAdmin(InstlInstanceBase):
 
             with batch_accum.sub_accum(Cd(revision_folder_path)) as sub_accum:
                 sub_accum += Subprocess("aws", "s3", "sync", os.curdir, "s3://$(S3_BUCKET_NAME)/$(REPO_NAME)/$(__CURR_REPO_FOLDER_HIERARCHY__)", "--exclude", "*.DS_Store")
-                repo_rev_file_path = config_vars["UPLOAD_REVISION_REPO_REV_FILE"].str()
-                sub_accum += Subprocess("aws", "s3", "cp", repo_rev_file_path, "s3://$(S3_BUCKET_NAME)/admin/", "--content-type", 'text/plain')
+                repo_rev_file_path = config_vars["UPLOAD_REVISION_REPO_REV_FILE"].Path()
+                sub_accum += Subprocess("aws", "s3", "cp", os.fspath(repo_rev_file_path), "s3://$(S3_BUCKET_NAME)/admin/"+repo_rev_file_path.name, "--content-type", 'text/plain')
             batch_accum += RmDirContents(revision_folder_path, exclude=['instl'])
 
             self.write_batch_file(batch_accum)
@@ -882,7 +888,9 @@ class InstlAdmin(InstlInstanceBase):
         log.info(f"{self.get_version_str(short=False)}")
         log.info(f"wait on redis list: {_redis_host}:{_redis_port} {_waiting_list_redis_key}")
         log.info(f"to upload: lpush {_waiting_list_redis_key} upload:domain:version:repo-rev (e.g. upload:test:V10:333)")
+        log.info(f"to create and upload only short index: lpush {_waiting_list_redis_key} short-index:domain:version:repo-rev (e.g. short-index:test:V12:17)")
         log.info(f"to activate: lpush {_waiting_list_redis_key} activate:domain:version:repo-rev (e.g. activate:test:V10:333)")
+
         log.info(f"special values: lpush {_waiting_list_redis_key} stop|ping|reload-config-files")
 
     def do_wait_on_action_trigger(self):
@@ -1074,3 +1082,12 @@ class InstlAdmin(InstlInstanceBase):
         except Exception as ex:
             with open(path_to_resolved, "a") as wfd:
                 wfd.write(f"\nFailed to send email\n{traceback.format_exc()}")
+
+    def do_short_index(self):
+        config_vars['__SILENT__'] = True  # disable InstlClientReport from doing output since ShortIndexYamlCreator already does that
+        in_file_path = config_vars["__MAIN_INPUT_FILE__"].Path()
+        with IndexYamlReader(in_file_path, report_own_progress=False) as yaml_reader:
+            yaml_reader()
+        out_file_path = config_vars.get("__MAIN_OUT_FILE__", None).Path()
+        with ShortIndexYamlCreator(out_file_path, report_own_progress=False) as short_creator:
+            short_creator()

@@ -1414,34 +1414,14 @@ class IndexItemsTable(object):
             returns IID, GUID, NAME, VERSION, generation
         """
 
-        query_text = """
-            SELECT index_item_t.iid AS IID,
-                   item_guid_t.detail_value AS GUID,
-                   item_name_t.detail_value AS NAME,
-                   item_version_t.detail_value AS VERSION,
-                   item_guid_2_t.detail_value AS GUID2,
-                   min(item_version_t.generation) AS generation,
-                   max(item_guid_2_t.generation) AS generation
-            FROM index_item_t
-            
-            LEFT JOIN index_item_detail_t AS item_guid_t
-            ON item_guid_t.owner_iid == index_item_t.iid
-            AND item_guid_t.detail_name == 'guid'
-            
-            LEFT JOIN index_item_detail_t AS item_name_t
-            ON item_name_t.owner_iid == index_item_t.iid
-            AND item_name_t.detail_name == 'name'
-            
-            LEFT JOIN index_item_detail_t AS item_version_t
-            ON item_version_t.owner_iid == index_item_t.iid
-            AND item_version_t.detail_name == 'version'
-            
-            LEFT JOIN index_item_detail_t AS item_guid_2_t
-            ON item_guid_2_t.owner_iid == index_item_t.iid
-            AND item_guid_2_t.detail_name == 'guid'
-            
-            GROUP BY index_item_t.iid
-        """
+        self.db.exec_script_file("short-index.ddl")
+
+        query_text = f"""
+                    -- select all rows that have some version
+                    SELECT * FROM short_index_t
+                    WHERE version_mac IS NOT NULL
+                    OR version_win IS NOT NULL;
+                    """
 
         retVal = self.db.select_and_fetchall(query_text)
         return retVal
