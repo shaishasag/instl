@@ -12,4 +12,5 @@ sys.stderr = open(sys.stderr.fileno(), mode='w', encoding='utf8', buffering=1, e
 from pyinstl.instl_main import instl_own_main
 
 if __name__ == "__main__":
+    print("run function instl_own_main")
     instl_own_main(argv=sys.argv)

@@ -110,9 +110,11 @@ def instl_own_main(argv):
     """
     with InvocationReporter(argv, report_own_progress=False):
 
+        print("instl_own_main: argv.copy")
         argv = argv.copy()  # argument argv is usually sys.argv, which might change with recursive process calls
         options = CommandLineOptions()
         command_names = read_command_line_options(options, argv[1:])
+        print("instl_own_main: init vars")
         initial_vars = {"__INSTL_EXE_PATH__": get_path_to_instl_app(),
                         "__CURR_WORKING_DIR__": utils.safe_getcwd(),  # the working directory when instl was launched
                         "__INSTL_LAUNCH_COMMAND__": get_instl_launch_command(),
@@ -145,7 +147,7 @@ def instl_own_main(argv):
                         "ACTING_UID": -1,
                         "ACTING_GID": -1,
                         }
-
+        print("instl_own_main: init vars for specific os")
         if os_family_name != "Win":
             initial_vars.update(
                         {"__USER_ID__": str(os.getuid()),
@@ -161,7 +163,8 @@ def instl_own_main(argv):
             from pyinstl.instlCommandList import run_commands_from_file
             run_commands_from_file(initial_vars, options)
         elif options.mode == "client": #shai, maybe add a log here?  before all imports
-            log.debug("begin, importing instl object") #added by oren
+            print ("client mode import instl factor")
+            log.debug("begin, importing instl object")
             from pyinstl.instlClient import InstlClientFactory
             instance = InstlClientFactory(initial_vars, options.__MAIN_COMMAND__)
             instance.progress("welcome to instl", instance.get_version_str(short=True), options.__MAIN_COMMAND__)
