@@ -560,7 +560,7 @@ class Chmod(RunProcessBase):
             if w == "u":
                 actual_who.append(getpass.getuser())
             elif w == "g":
-                actual_who.append("S-1-5-32-545")
+                actual_who.append("*S-1-5-32-545")
             elif w == "o":
                 actual_who.append("*S-1-1-0:(OI)(CI)F")
 
