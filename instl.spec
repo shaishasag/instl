@@ -63,7 +63,7 @@ exe = EXE(pyz,
           a.scripts,
           exclude_binaries=True,
           name='instl',
-          debug=True,
+          debug=False,
           strip=None,
           upx=False, # does not work even if True
           runtime_tmpdir="runtime_tmpdir",
