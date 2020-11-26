@@ -29,7 +29,7 @@ a = Analysis(['instl'],
 instl_defaults_path = os.path.join("defaults")
 for defaults_file in os.listdir(instl_defaults_path):
     if fnmatch.fnmatch(defaults_file, '*.yaml') or fnmatch.fnmatch(defaults_file, '*.ddl'):
-        a.datas += [("defaults/"+defaults_file, os.path.join(instl_defaults_path, defaults_file), "DATA")]
+        a.datas += [("defaults/"+defaults_file, os.path.join(instl_defaults_path, defaults_file), "Resources")]
 
 
 git_branch = check_output(["git", "rev-parse", "--symbolic-full-name", "--abbrev-ref", "HEAD"]).decode('utf-8')
@@ -47,12 +47,12 @@ __PLATFORM_NODE__: {}
 __PYTHON_COMPILER__: {}
 __GITHUB_BRANCH__: {}
 """.format(str(datetime.datetime.now()), socket.gethostname(), platform.node(), PyInstallerVersion, git_branch))
-a.datas += [("defaults/compile-info.yaml", compile_info_path, "DATA")]
+a.datas += [("defaults/compile-info.yaml", compile_info_path, "res")]
 
 instl_help_path = os.path.join("help")
 for help_file in os.listdir(instl_help_path):
     if fnmatch.fnmatch(help_file, '*.yaml'):
-        a.datas += [("help/"+help_file, os.path.join(instl_help_path, help_file), "DATA")]
+        a.datas += [("help/"+help_file, os.path.join(instl_help_path, help_file), "Resources")]
 
 
 
