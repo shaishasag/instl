@@ -117,7 +117,7 @@ def instl_own_main(argv):
                         "__CURR_WORKING_DIR__": utils.safe_getcwd(),  # the working directory when instl was launched
                         "__INSTL_LAUNCH_COMMAND__": get_instl_launch_command(),
                         "__INSTL_DATA_FOLDER__": get_data_folder(),
-                        "__INSTL_DEFAULTS_FOLDER__": utils.safe_getcwd()+"/defaults",
+                        "__INSTL_DEFAULTS_FOLDER__": utils.safe_getcwd()+"/Resources/defaults",
                         "__INSTL_COMPILED__": str(getattr(sys, 'frozen', False)),
                         "__PYTHON_VERSION__": sys.version_info,
                         "__PLATFORM_NODE__": platform.node(),
