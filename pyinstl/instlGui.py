@@ -622,9 +622,11 @@ class ActivateFrameController(FrameController):
                     focused_item_values = self.tree.item(focused_item)
                     new_value = ":".join((focused_item_values['text'], str(focused_item_values['values'][0])))
                     self.tk_vars["DOMAIN_REPO_TO_ACTIVATE"].set(new_value)
+                    self.tk_vars["DOMAIN_REPO_TO_UPLOAD"].set(new_value)
                     uploaded_rep_rev = focused_item_values['values'][1]
                     activated_rep_rev = int(focused_item_values['values'][2])
                     self.tk_vars["REPO_REV_TO_ACTIVATE"].set(uploaded_rep_rev)
+                    self.tk_vars["REPO_REV_TO_UPLOAD"].set(uploaded_rep_rev)
                 self.prev_focused_item = focused_item
 
 
