@@ -54,6 +54,7 @@ class InstlAdmin(InstlInstanceBase):
         self.config_vars_stack_size_before_reading_config_files = None
         self.wait_info_counter = 0  # incremented when printing wait info
 
+
     def get_default_out_file(self) -> None:
         if "__CONFIG_FILE__" in config_vars and '__MAIN_OUT_FILE__' not in config_vars:
             config_vars["__MAIN_OUT_FILE__"] = "$(__CONFIG_FILE__[0])-$(__MAIN_COMMAND__).$(BATCH_EXT)"
@@ -502,6 +503,7 @@ class InstlAdmin(InstlInstanceBase):
         all_iids = sorted(self.items_table.get_all_iids())
         self.total_self_progress += len(all_iids)
         self.items_table.change_status_of_all_iids(1)
+        def_items_with_info_map = self.info_map_table.get_items_for_default_infomap()
 
         problem_messages_by_iid = defaultdict(list)
 
@@ -528,14 +530,15 @@ class InstlAdmin(InstlInstanceBase):
             for source in source_and_tag_list:
                 source_path, source_type = source[0], source[1]
                 num_files_for_source = self.info_map_table.mark_required_for_source(source_path, source_type)
-                if num_files_for_source == 0:
-                    err_message = " ".join(("source", utils.quoteme_single(source_path),"required by", iid, "does not have files"))
+                if num_files_for_source == 0 and iid not in def_items_with_info_map:
+                    # For IIDs that have info_map field, we can verify the files by reading the specific info_map.txt
+                    err_message = " ".join(("source", utils.quoteme_single(source_path), "required by", iid, "does not have files"))
                     problem_messages_by_iid[iid].append(err_message)
 
             # check targets
             if len(source_and_tag_list) > 0:
                 target_folders = set(self.items_table.get_resolved_details_value_for_active_iid(iid, "install_folders", unique_values=True))
-                if len(target_folders) == 0:
+                if len(target_folders) == 0 and iid not in config_vars["IIDS_WITH_NO_TARGET_FOLDERS"]:
                     err_message = " ".join(("iid", iid, "does not have target folder"))
                     problem_messages_by_iid[iid].append(err_message)
 
@@ -562,6 +565,19 @@ class InstlAdmin(InstlInstanceBase):
         unrequired_dirs = self.info_map_table.get_unrequired_items(what="dir")
         self.progress("unrequired dirs:")
         [self.progress("    ", d.path) for d in unrequired_dirs]
+
+    #added by oren
+    # For IIDs that do not have target folder we can add install_folders: ~ this will need special handling in instl
+    def should_return_warning_missing_targets(self, iid) -> bool:
+        iids_with_no_target_folders = ['GET_FILES_FOR_CREATE_PLIST_IID', 'Get_General_Icons_IID', 'Minimum_Requirements_IID',
+                                       'UNINSTALL_PREVIOUS_VERSIONS_IID' ]
+        if iid in iids_with_no_target_folders:
+            return False
+        else:
+            target_folders = set(
+                self.items_table.get_resolved_details_value_for_active_iid(iid, "install_folders", unique_values=True))
+            if len(target_folders) == 0:
+                return True
 
     def should_file_be_exec(self, file_path):
         retVal = self.compiled_should_be_exec_regex.search(file_path)
