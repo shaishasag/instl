@@ -443,8 +443,7 @@ class SVNTable(object):
                     row_data = list(utils.iter_complete_to_longest(row,
                                                                    info_map_line_defaults))  # path, flags, revision, checksum, size, url, dl_path
                     if row_data[6] is not None:
-                        match = dl_path_re.match(row_data[6])
-                        if match:
+                        if match := dl_path_re.match(row_data[6]):
                             row_data[6] = match['ld_path']
                     row_data.extend(self.level_parent_and_leaf_from_path(row_data[0]))  # level, parent, leaf
                     row_data.append(1 if 'f' in row_data[1] else 0)  # fileFlag
@@ -617,8 +616,7 @@ class SVNTable(object):
             line_num = 0
             for line in rfd:
                 line_num += 1
-                match = comment_line_re.match(line)
-                if not match:
+                if not comment_line_re.match(line):
                     parts = line.rstrip().split(", ", 2)
                     if len(parts) != 2:
                         log.warning(f"""weird line {line}, {line_num}""")
@@ -663,8 +661,7 @@ class SVNTable(object):
                 not_in_props_to_ignore_query_params = list()
                 for line in rfd:
                     line_num += 1
-                    match = props_line_re.match(line)
-                    if match:
+                    if match := props_line_re.match(line):
                         if match['path']:
                             path = match['path']
                         elif match['prop_name']:

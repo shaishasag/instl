@@ -12,7 +12,6 @@ import contextlib
 import filecmp
 import random
 import string
-from collections import namedtuple
 import unittest
 
 import utils
