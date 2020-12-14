@@ -113,8 +113,7 @@ class SVNLastRepoRev(SVNClient, kwargs_defaults={"depth": "empty", "capture_stdo
     def handle_completed_process(self, completed_process):
         info_as_io = io.StringIO(utils.unicodify(completed_process.stdout))
         for line in info_as_io:
-            match = self.revision_line_re.match(line)
-            if match:
+            if match := self.revision_line_re.match(line):
                 last_repo_rev = int(match["revision"])
                 break
         else:

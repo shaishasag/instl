@@ -14,7 +14,6 @@ import filecmp
 import subprocess
 import string
 from threading import Timer
-from collections import namedtuple
 
 import utils
 from pybatch import *

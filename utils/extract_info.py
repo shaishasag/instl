@@ -38,8 +38,7 @@ def plugin_bundle(in_os, in_path: Path):
     if xml_path.exists():
         with utils.utf8_open_for_read(xml_path, "r") as rfd:
             info_xml = rfd.read()
-            match = plugin_version_and_guid_re.match(info_xml)
-            if match:
+            if match := plugin_version_and_guid_re.match(info_xml):
                 retVal = (in_path, match['version'], match['guid'])
     else:
         if in_os == 'Mac':

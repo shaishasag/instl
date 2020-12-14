@@ -90,8 +90,8 @@ class InstlAdmin(InstlInstanceBase):
                                 """, re.VERBOSE)
         min_rev = 0
         max_rev = 1
-        match = revision_range_re.match(config_vars["REPO_REV"].str())
-        if match:
+
+        if match := revision_range_re.match(config_vars["REPO_REV"].str()):
             min_rev += int(match['min_rev'])
             if match['max_rev']:
                 max_rev += int(match['max_rev'])
@@ -706,8 +706,7 @@ class InstlAdmin(InstlInstanceBase):
         with utils.utf8_open_for_read(in_file, "r") as rfd:
             with utils.utf8_open_for_write(out_file, "w") as wfd:
                 for line in rfd.readlines():
-                    match = guid_re.search(line)
-                    if match:
+                    if match := guid_re.search(line):
                         new_line = line.replace(match.group("guid"), f'{match.group("guid")}  # {iid_to_guid.get(match.group("guid").lower(), "?")}')
                         wfd.write(new_line)
                         num_translated_guids += 1
@@ -1053,8 +1052,7 @@ class InstlAdmin(InstlInstanceBase):
             log.info(f"downloaded activated repo-rev file to {copy_of_activated_repo_rev_file_path}")
             with utils.utf8_open_for_read(copy_of_activated_repo_rev_file_path, "r") as rfd:
                 repo_rev_file_text = rfd.read()
-                match = re.search(r"^REPO_REV:\s+(?P<target_repo_rev>\d+)", repo_rev_file_text, flags=re.MULTILINE)
-                if match:
+                if match := re.search(r"^REPO_REV:\s+(?P<target_repo_rev>\d+)", repo_rev_file_text, flags=re.MULTILINE):
                     actual_activated_repo_rev_from_s3 = int(match.group('target_repo_rev'))
                     if actual_activated_repo_rev_from_s3 == target_repo_rev:
                         log.info(f"verified activated repo-rev for {target_domain} {major_version} is {actual_activated_repo_rev_from_s3}")

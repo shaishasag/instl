@@ -27,19 +27,15 @@ ParseRetVal = namedtuple('ParseRetVal',
                           'key_word_params',      # dict of key word params e.g. {c: 7, d: 8}, or None
                           'array_index_str',      # the whole variable array index part, as string e.g. "[5]" or None
                           'array_index_int'       # variable array index as integer or None
-                          ])
+                          ],
+                         defaults=[
+                            "", None, None, None, None, None, None, None
+                         ])
 
 
 class VarParseImpContext(object):
-    reset_yield_value: ParseRetVal = ParseRetVal(literal_text="",
-                                    variable_str=None,
-                                    variable_params_str=None,
-                                    variable_name=None,
-                                    positional_params=None,
-                                    key_word_params=None,
-                                    array_index_str=None,
-                                    array_index_int=None)
-    # Unfortunately '(', ')' are also acceptable in variable name on Windows, these will get special attention in the code
+    # Unfortunately '(', ')' are also acceptable in environment variable names on Windows,
+    # these will get special attention in the code
     # However, '(', ')' in a variable name must be balanced
     variable_name_acceptable_characters = set((c for c in string.ascii_letters + string.digits + '_' + '-'))
 
@@ -51,7 +47,7 @@ class VarParseImpContext(object):
             self.positional_params,
             self.key_word_params,
             self.array_index_str,
-            self.array_index_int) = self.reset_yield_value
+            self.array_index_int) = ParseRetVal()
         self.parenthesis_balance: int = 0
 
     def reset_return_tuple(self):
@@ -62,7 +58,7 @@ class VarParseImpContext(object):
          self.positional_params,
          self.key_word_params,
          self.array_index_str,
-         self.array_index_int) = self.reset_yield_value
+         self.array_index_int) = ParseRetVal()
 
     def get_return_tuple(self) -> ParseRetVal:
         return ParseRetVal(self.literal_text,

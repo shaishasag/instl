@@ -10,7 +10,9 @@ from .fileSystemBatchCommands import *
 from .removeBatchCommands import RmFileOrDir
 log = logging.getLogger(__name__)
 
-
+# starting with python3.8, shutil copy is much faster using native os functions
+# https://docs.python.org/3.8/library/shutil.html#platform-dependent-efficient-copy-operations
+# so this function should be replaced
 def _fast_copy_file(src, dst):
     # insert faster code here if and when available
     try:
@@ -278,8 +280,7 @@ no_flags_patterns: if a file matching one of these patterns exists in the destin
         return retVal
 
     def should_copy_dir(self, src: Path, dst: Path, src_file_names):
-        retVal = self.top_destination_does_not_exist
-        if not retVal:
+        if not (retVal := self.top_destination_does_not_exist):
             for avoid_copy_marker in self.__global_avoid_copy_markers:
                 if avoid_copy_marker in src_file_names:
                     src_marker = Path(src, avoid_copy_marker)
@@ -310,7 +311,7 @@ no_flags_patterns: if a file matching one of these patterns exists in the destin
                             shutil.copystat(src, dst, follow_symlinks=follow_symlinks)
                 else:  # try to create hard link
                     try:
-                        self.dry_run or os.link(src, dst)
+                        self.dry_run or src.link_to(dst)
                         log.debug(f"hard link file '{self.last_src}' to '{self.last_dst}'")
                         self.statistics['hard_links'] += 1
                     except OSError as ose:
@@ -349,7 +350,7 @@ no_flags_patterns: if a file matching one of these patterns exists in the destin
                         shutil.copystat(src, dst, follow_symlinks=follow_symlinks)
                 else:  # try to create hard link
                     try:
-                        self.dry_run or os.link(src, dst)
+                        self.dry_run or src.link_to(dst)
                         log.debug(f"hard link file '{self.last_src}' to '{self.last_dst}'")
                         self.statistics['hard_links'] += 1
                     except OSError as ose:

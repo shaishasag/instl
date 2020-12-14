@@ -97,8 +97,7 @@ class ConfigVarYamlReader(aYaml.YamlReader):
     conditional_re = re.compile("""__if(?P<if_type>.*)__\s*\((?P<condition>.+)\)""")
 
     def read_conditional_node(self, identifier, contents, *args, **kwargs):
-        match = self.conditional_re.match(identifier)
-        if match:
+        if match := self.conditional_re.match(identifier):
             condition = match['condition']
             if_type = match['if_type']
             if if_type == "def":     # __ifdef__: if configVar is defined

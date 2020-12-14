@@ -3,7 +3,7 @@
 import os
 import sys
 import time
-from collections import defaultdict, namedtuple, OrderedDict
+from collections import defaultdict, OrderedDict
 import logging
 log = logging.getLogger()
 
