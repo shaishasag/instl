@@ -47,6 +47,7 @@ class PythonBatchCommandBase(abc.ABC):
     is_anonymous: bool = False        # anonymous means the object is just a container for child_batch_commands and should not be used by itself
     runtime_duration_by_progress = dict()
     ignore_progress = False           # set to True when using batch commands out side python batch file
+    config_vars_for_repr = None       # set to global config_vars just before writing to batch file in PythonBatchCommandAccum.__repr__()
 
     # defaults for __init__ of derived classes. Members how's value has not changed from these values
     # can be skipped when __repr__ recreates the object
@@ -57,7 +58,9 @@ class PythonBatchCommandBase(abc.ABC):
                        "reply_config_var": None,
                        "reply_environ_var": None,
                        'prog_num': 0,
-                       'skip_action': False}
+                       'skip_action': False,
+                       'suspend': 0}
+
 
     @classmethod
     def __init_subclass__(cls, essential=True, call__call__=True, is_context_manager=True, is_anonymous=False, kwargs_defaults=None, **kwargs):
@@ -140,7 +143,7 @@ class PythonBatchCommandBase(abc.ABC):
         """
         kwdict = self.all_kwargs_dict(only_non_default_values=True)
         for kwarg_name, kwarg_value in kwdict.items():
-            all_args.append(f"""{kwarg_name}={utils.quoteme_raw_by_type(kwarg_value)}""")
+            all_args.append(self.named__init__param(kwarg_name, kwarg_value))
 
     #@abc.abstractmethod
     def repr_own_args(self, all_args: List[str]) -> None:
@@ -201,18 +204,18 @@ class PythonBatchCommandBase(abc.ABC):
             raise PythonBatchCommandBase.SkipActionException()
 
     def unnamed__init__param(self, value):
-        value_str = utils.quoteme_raw_by_type(value)
+        value_str = utils.quoteme_raw_by_type(value, PythonBatchCommandBase.config_vars_for_repr)
         return value_str
 
     def named__init__param(self, name, value):
-        value_str = utils.quoteme_raw_by_type(value)
+        value_str = utils.quoteme_raw_by_type(value, PythonBatchCommandBase.config_vars_for_repr)
         param_repr = f"{name}={value_str}"
         return param_repr
 
     def optional_named__init__param(self, name, value, default=None):
         param_repr = None
         if value != default:
-            value_str = utils.quoteme_raw_by_type(value)
+            value_str = utils.quoteme_raw_by_type(value, PythonBatchCommandBase.config_vars_for_repr)
             param_repr = f"{name}={value_str}"
         return param_repr
 
@@ -310,6 +313,12 @@ class PythonBatchCommandBase(abc.ABC):
             'operating_system': utils.get_os_description(),
              })
 
+        if "INSTL_MINIMAL_VERSION" in config_vars:
+            min_version_as_list = [int(v) for v in config_vars["INSTL_MINIMAL_VERSION"].list()]
+            cur_version_as_list = [int(v) for v in config_vars["__INSTL_VERSION__"].list()]
+            if cur_version_as_list < min_version_as_list:
+                self._error_dict['minimal_instl_version'] = min_version_as_list
+
         for cv in config_vars.get("CONFIG_VARS_FOR_ERROR_REPORT", []).list():
             self._error_dict[cv] = str(config_vars.get(cv, "unknown"))
 
@@ -324,6 +333,20 @@ class PythonBatchCommandBase(abc.ABC):
                 "batch_line": exc_tb.tb_lineno
                 })
         return self._error_dict
+
+    def who_locks_file_error_dict(self, func, path_to_file, exc_info=None):
+        """
+            WINDOWS ONLY - will do nothing on other platforms
+            updates _error_dict with describing who is locking a file - if any
+            function signiture is structured to be suitable to pass to shutil.rmtree onerror param
+        """
+        who_locks_file_dll_path = config_vars.get("__WHO_LOCKS_FILE_DLL_PATH__", None).Path()
+        if who_locks_file_dll_path:
+            locked_file_info = utils.who_locks_file(path_to_file, who_locks_file_dll_path)
+            if locked_file_info:
+                self._error_dict["locked_file_info"] = locked_file_info
+        if exc_info is not None:
+            raise
 
     def enter_self(self) -> None:
         """ classes overriding PythonBatchCommandBase can add code here without
@@ -370,6 +393,10 @@ class PythonBatchCommandBase(abc.ABC):
         self.exit_self(exit_return=suppress_exception)
 
         self.exit_timing_measure()
+
+        if self.suspend:
+            log.warning(f"suspending for {self.suspend} seconds")
+            time.sleep(self.suspend)
 
         if self.report_own_progress and not PythonBatchCommandBase.ignore_progress:
             if 0 < self.prog_num != self.runtime_progress_num:

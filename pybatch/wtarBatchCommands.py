@@ -12,7 +12,7 @@ import utils
 import zlib
 
 from .baseClasses import PythonBatchCommandBase
-from .fileSystemBatchCommands import SplitFile, ChmodAndChown, Chmod, Chown, MakeDir
+from .fileSystemBatchCommands import SplitFile, FixAllPermissions, MakeDir
 from .removeBatchCommands import RmDir, RmFile
 
 log = logging.getLogger(__name__)
@@ -39,11 +39,9 @@ class Wtar(PythonBatchCommandBase):
         self.split_threshold = split_threshold
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(f'''what_to_wtar={utils.quoteme_raw_by_type(self.what_to_wtar)}''')
-        if self.where_to_put_wtar:
-            all_args.append(f'''where_to_put_wtar={utils.quoteme_raw_by_type(self.where_to_put_wtar)}''')
-        if self.split_threshold > 0:
-            all_args.append(f'''split_threshold={utils.quoteme_raw_by_type(self.split_threshold)}''')
+        all_args.append(self.named__init__param("what_to_wtar", self.what_to_wtar))
+        all_args.append(self.optional_named__init__param("where_to_put_wtar", self.where_to_put_wtar))
+        all_args.append(self.optional_named__init__param("split_threshold", self.split_threshold, 0))
 
     def progress_msg_self(self) -> str:
         return f"""Compress '{self.what_to_wtar}' to '{self.where_to_put_wtar}'"""
@@ -127,6 +125,8 @@ class Wtar(PythonBatchCommandBase):
         ignore_files = list(config_vars.get("WTAR_IGNORE_FILES", []))
 
         self.doing = f"""wtarring '{resolved_what_to_wtar}' to '{target_wtar_file}''"""
+        with FixAllPermissions(resolved_what_to_wtar, report_own_progress=False, recursive=resolved_what_to_wtar.is_dir()) as perm_fixer:
+            perm_fixer()
         with utils.ChangeDirIfExists(resolved_what_to_wtar.parent):
             pax_headers = {"total_checksum": utils.get_recursive_checksums(resolved_what_to_wtar.name, ignore=ignore_files)["total_checksum"]}
 
@@ -174,14 +174,11 @@ class Unwtar(PythonBatchCommandBase):
         self.no_artifacts = no_artifacts
         self.copy_owner = copy_owner
         self.wtar_file_paths = None
-        self.wtar_file_paths_details = None
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(f'''what_to_unwtar={utils.quoteme_raw_by_type(self.what_to_unwtar)}''')
-        if self.where_to_unwtar:
-            all_args.append(f'''where_to_unwtar={utils.quoteme_raw_by_type(self.where_to_unwtar)}''')
-        if self.no_artifacts:
-            all_args.append(f'''no_artifacts=True''')
+        all_args.append(self.named__init__param("what_to_unwtar", self.what_to_unwtar))
+        all_args.append(self.optional_named__init__param("where_to_unwtar", self.where_to_unwtar, None))
+        all_args.append(self.optional_named__init__param("no_artifacts", self.no_artifacts, False))
 
     def progress_msg_self(self) -> str:
         return f"""Expand '{self.what_to_unwtar}' to '{self.where_to_unwtar}'"""
@@ -189,15 +186,13 @@ class Unwtar(PythonBatchCommandBase):
     def error_dict_self(self, exc_type, exc_val, exc_tb) -> None:
         super().error_dict_self(exc_type, exc_val, exc_tb)
         # replace plain paths with detailed info such as size, permissions, mod date, user, group
-        self.wtar_file_paths = self.wtar_file_paths_details
-        self.wtar_file_paths_details = None
+        self.wtar_file_paths = [utils.single_disk_item_listing(wtar_file_path, "PuUgGRTfC") for wtar_file_path in self.wtar_file_paths]
 
     def unwtar_a_file(self, wtar_file_path: Path, destination_folder: Path, no_artifacts=False, ignore=None, copy_owner=False):
         if ignore is None:
             ignore = ()
         try:
             self.wtar_file_paths = utils.find_split_files(wtar_file_path)
-            self.wtar_file_paths_details = [utils.single_disk_item_listing(wtar_file_path, "PuUgGRTf") for wtar_file_path in self.wtar_file_paths]
 
             log.debug(f"unwtar {wtar_file_path} to {destination_folder}")
 
@@ -336,9 +331,8 @@ class Wzip(PythonBatchCommandBase):
         self.where_to_put_wzip = os.fspath(where_to_put_wzip) if where_to_put_wzip else None
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(utils.quoteme_raw_by_type(self.what_to_wzip))
-        if self.where_to_put_wzip:
-            all_args.append(utils.quoteme_raw_by_type(self.where_to_put_wzip))
+        all_args.append(self.unnamed__init__param(self.what_to_wzip))
+        all_args.append(self.optional_named__init__param("where_to_put_wzip", self.where_to_put_wzip))
 
     def progress_msg_self(self) -> str:
         if self.where_to_put_wzip:
@@ -377,9 +371,8 @@ class Unwzip(PythonBatchCommandBase):
         self.target_unwzip_file = None
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(utils.quoteme_raw_by_type(self.what_to_unwzip))
-        if self.where_to_put_unwzip:
-            all_args.append(utils.quoteme_raw_by_type(self.where_to_put_unwzip))
+        all_args.append(self.unnamed__init__param(self.what_to_unwzip))
+        all_args.append(self.optional_named__init__param("where_to_put_unwzip", self.where_to_put_unwzip))
 
     def progress_msg_self(self) -> str:
         return f"""Unzip '{self.what_to_unwzip}' to '{self.where_to_put_unwzip}'"""

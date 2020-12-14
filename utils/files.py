@@ -352,6 +352,7 @@ def download_from_file_or_url(in_url, config_vars, in_target_path=None, translat
         download a file from url and place it on a target path. Possibly also decompressed .wzip files.
         """
 
+    final_file_path = None
     cached_file_path = download_and_cache_file_or_url(in_url=in_url, config_vars=config_vars, translate_url_callback=translate_url_callback, cache_folder=cache_folder, expected_checksum=expected_checksum)
     if not in_target_path:
         in_target_path = cache_folder
@@ -582,12 +583,19 @@ def translate_cookies_from_GetInstlUrlComboCollection(in_cookies):
     return retVal
 
 
-def ExpandAndResolvePath(path_to_resolve: os.PathLike, resolve_path=True) -> Path:
+def ExpandAndResolvePath(path_to_resolve, resolve_path=True) -> Path:
     """ return a Path object after calling
         os.path.expandvars to expand environment variables
         and Path.resolve to resolve relative paths and
     """
+    # repeat calling os.path.expandvars until no change
+    # because os.path.expandvars does not expand recursively
+    before_expand = path_to_resolve
     expanded_path = os.path.expandvars(path_to_resolve)
+    while before_expand != expanded_path:
+        before_expand = expanded_path
+        expanded_path = os.path.expandvars(expanded_path)
+
     path_path = Path(expanded_path)
     if resolve_path:
         path_path = path_path.resolve()
@@ -677,3 +685,50 @@ def safe_getcwd(return_on_error="os.getcwd() failed", ignore_exceptions=True):
         else:
             raise
     return retVal
+
+
+def who_locks_file(in_file_path, in_dll_path):
+    """ windows only function to return the process that locks a file
+        :param in_file_path: file to check
+        :param in_dll_path: path to dll that implements the who_locks_file function
+        :return: dict with lock information for the file
+        :except function never raises exception, field "error" in return value will indicate an error
+    """
+    retVal = dict()
+    try:
+        import ctypes
+        if not Path(in_dll_path).is_file():
+            retVal["error"] = f"who_locks_file.dll not found {in_dll_path}"
+        elif not Path(in_file_path).is_file():
+            retVal["error"] = f"file not found {in_file_path}"
+        else:
+            who_locks_file_dll = ctypes.WinDLL(os.fspath(in_dll_path))
+            replay_max_size = 260 * 128 * 2
+            the_reply = ctypes.create_string_buffer(replay_max_size)  # supposedly enough for two long-form paths: the file and the process
+            file_path_c_wchar_p = ctypes.c_wchar_p(os.fspath(in_file_path))
+            ret_code = who_locks_file_dll.who_locks_file_json(file_path_c_wchar_p, the_reply, replay_max_size)
+            if 0 == ret_code:
+                import json
+                return_value_str = bytes(the_reply.value).decode('utf-8')
+                return_value_json = json.loads(return_value_str)
+                retVal.update(return_value_json)
+            else:
+                retVal["error"] = ret_code
+    except Exception as ex:
+        retVal["error"] = str(ex)
+
+    return retVal
+
+def wait_for_break_file_to_be_removed(path_to_break_file, progress_callback=None):
+    """ while path_to_break_file exist, sleep 1 second and call progress_callback"""
+    if progress_callback is None:
+        progress_callback = print
+    path_to_break_file = Path(path_to_break_file)
+    num_sleeps = 0
+    while path_to_break_file.is_file():
+        num_sleeps += 1
+        progress_callback(f"{num_sleeps} found break file: {path_to_break_file}")
+        time.sleep(1)
+    if num_sleeps > 0:
+        progress_callback(f"break file is gone {path_to_break_file}")
+

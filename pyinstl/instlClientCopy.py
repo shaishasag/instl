@@ -234,7 +234,7 @@ class InstlClientCopy(InstlClient):
             wtar_base_names = {source_item.unwtarred.split("/")[-1] for source_item in source_items if source_item.wtarFlag}
             ignores = list(wtar_base_names)
             source_path_abs = os.path.normpath("$(COPY_SOURCES_ROOT_DIR)/" + source_path)
-            retVal += CopyDirToDir(source_path_abs, os.curdir, link_dest=True, ignore_patterns=ignores)
+            retVal += CopyDirToDir(source_path_abs, os.curdir, link_dest=True, ignore_patterns=ignores, delete_extraneous_files=True)
             self.bytes_to_copy += functools.reduce(lambda total, item: total + self.calc_size_of_file_item(item), source_items, 0)
 
             source_path_dir, source_path_name = os.path.split(source_path)
@@ -343,9 +343,9 @@ class InstlClientCopy(InstlClient):
                         self.progress(f"create copy instructions of {source[0]} to {config_vars.resolve_str(target_folder_path)}")
                         with iid_accum.sub_accum(Stage("copy source", source[0])) as source_accum:
                             num_items_copied_to_folder += 1
-                            source_accum += self.accumulate_actions_for_iid(iid=IID, detail_name="pre_copy_item", message=None)
+                            source_accum += self.accumulate_actions_for_iid(iid=IID, detail_name="pre_copy_item")
                             source_accum += self.create_copy_instructions_for_source(source, name_and_version)
-                            source_accum += self.accumulate_actions_for_iid(iid=IID, detail_name="post_copy_item", message=None)
+                            source_accum += self.accumulate_actions_for_iid(iid=IID, detail_name="post_copy_item")
                             if self.mac_current_and_target:
                                 num_symlink_items += self.info_map_table.count_symlinks_in_dir(source[0])
             self.current_iid = None

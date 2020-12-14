@@ -4,13 +4,14 @@
 import os
 import re
 import logging
+
 log = logging.getLogger()
 
 import csv
 import sqlite3
 from contextlib import contextmanager
 from typing import Dict, Generator, List, Tuple
-
+from functools import lru_cache
 
 import utils
 from configVar import config_vars  # √
@@ -56,36 +57,36 @@ map_info_extension_to_format = {"txt": "text", "text": "text",
 
 class SVNRow(object):
     __slots__ = ('_id', 'path', 'flags', 'revision',
-                'checksum', 'size', 'url', 'fileFlag',
-                'wtarFlag', 'leaf', 'parent', 'level',
-                'required', 'need_download', 'download_path',
-                'download_root', 'extra_props', 'parent_id', 'unwtarred', 'symlinkFlag', 'ignore', 'needed_for_iid')
+                 'checksum', 'size', 'url', 'fileFlag',
+                 'wtarFlag', 'leaf', 'parent', 'level',
+                 'required', 'need_download', 'download_path',
+                 'download_root', 'extra_props', 'parent_id', 'unwtarred', 'symlinkFlag', 'ignore', 'needed_for_iid')
     fields_relevant_to_dirs = ('path', 'parent', 'level', 'flags', 'revision', 'required')
     fields_relevant_to_str = ('path', 'flags', 'revision', 'checksum', 'size', 'url')
 
     def __init__(self, svn_item_tuple) -> None:
-        self._id =              svn_item_tuple[0]
-        self.path =             svn_item_tuple[1]
-        self.flags =            svn_item_tuple[2]
-        self.revision =         svn_item_tuple[3]
-        self.checksum =         svn_item_tuple[4]
-        self.size =             svn_item_tuple[5]
-        self.url =              svn_item_tuple[6]
-        self.fileFlag =         svn_item_tuple[7]
-        self.wtarFlag =         svn_item_tuple[8]
-        self.leaf =             svn_item_tuple[9]
-        self.parent =           svn_item_tuple[10]
-        self.level =            svn_item_tuple[11]
-        self.required =         svn_item_tuple[12]
-        self.need_download =    svn_item_tuple[13]
-        self.download_path =    svn_item_tuple[14]
-        self.download_root =    svn_item_tuple[15]
-        self.extra_props =      svn_item_tuple[16]
-        self.parent_id =        svn_item_tuple[17]
-        self.unwtarred =        svn_item_tuple[18]
-        self.symlinkFlag =      svn_item_tuple[19]
-        self.ignore =           svn_item_tuple[20]
-        self.needed_for_iid =   svn_item_tuple[21]
+        self._id = svn_item_tuple[0]
+        self.path = svn_item_tuple[1]
+        self.flags = svn_item_tuple[2]
+        self.revision = svn_item_tuple[3]
+        self.checksum = svn_item_tuple[4]
+        self.size = svn_item_tuple[5]
+        self.url = svn_item_tuple[6]
+        self.fileFlag = svn_item_tuple[7]
+        self.wtarFlag = svn_item_tuple[8]
+        self.leaf = svn_item_tuple[9]
+        self.parent = svn_item_tuple[10]
+        self.level = svn_item_tuple[11]
+        self.required = svn_item_tuple[12]
+        self.need_download = svn_item_tuple[13]
+        self.download_path = svn_item_tuple[14]
+        self.download_root = svn_item_tuple[15]
+        self.extra_props = svn_item_tuple[16]
+        self.parent_id = svn_item_tuple[17]
+        self.unwtarred = svn_item_tuple[18]
+        self.symlinkFlag = svn_item_tuple[19]
+        self.ignore = svn_item_tuple[20]
+        self.needed_for_iid = svn_item_tuple[21]
 
     def __repr__(self) -> str:
         isDir = not self.fileFlag
@@ -127,17 +128,17 @@ class SVNRow(object):
             if self.isDir():
                 for name in fields_to_repr:
                     if name in SVNRow.fields_relevant_to_dirs:
-                        value_list.append(str(getattr(self, name, "no member named "+name)))
+                        value_list.append(str(getattr(self, name, "no member named " + name)))
             else:
                 for name in fields_to_repr:
-                    value_list.append(str(getattr(self, name, "no member named "+name)))
+                    value_list.append(str(getattr(self, name, "no member named " + name)))
             retVal = ", ".join(value_list)
         return retVal
 
     def get_ancestry(self) -> List[str]:
         ancestry = list()
         split_path = self.path.split("/")
-        for i in range(1, len(split_path)+1):
+        for i in range(1, len(split_path) + 1):
             ancestry.append("/".join(split_path[:i]))
         return ancestry
 
@@ -196,28 +197,28 @@ class SVNRow(object):
             other_as_SVNRow = SVNRow(other)
             retVal = self.__dict__ == other_as_SVNRow.__dict__
         elif isinstance(other, tuple): \
-            retVal= (other[0] == self._id
-            and     other[1] == self.path
-            and     other[2] == self.flags
-            and     other[3] == self.revision
-            and     other[4] == self.checksum
-            and     other[5] == self.size
-            and     other[6] == self.url
-            and     other[7] == self.fileFlag
-            and     other[8] == self.wtarFlag
-            and     other[9] == self.leaf
-            and     other[10] == self.parent
-            and     other[11] == self.level
-            and     other[12] == self.required
-            and     other[13] == self.need_download
-            and     other[14] == self.download_path
-            and     other[15] == self.download_root
-            and     other[16] == self.extra_props
-            and     other[17] == self.parent_id
-            and     other[18] == self.unwtarred
-            and     other[19] == self.symlinkFlag
-            and     other[20] == self.ignore
-                    )
+                retVal = (other[0] == self._id
+                          and other[1] == self.path
+                          and other[2] == self.flags
+                          and other[3] == self.revision
+                          and other[4] == self.checksum
+                          and other[5] == self.size
+                          and other[6] == self.url
+                          and other[7] == self.fileFlag
+                          and other[8] == self.wtarFlag
+                          and other[9] == self.leaf
+                          and other[10] == self.parent
+                          and other[11] == self.level
+                          and other[12] == self.required
+                          and other[13] == self.need_download
+                          and other[14] == self.download_path
+                          and other[15] == self.download_root
+                          and other[16] == self.extra_props
+                          and other[17] == self.parent_id
+                          and other[18] == self.unwtarred
+                          and other[19] == self.symlinkFlag
+                          and other[20] == self.ignore
+                          )
         return retVal
 
     def __fspath__(self):
@@ -276,7 +277,7 @@ class SVNTable(object):
         {another_filter}
         ORDER BY parent_id
         """
-    get_immediate_child_items_q =  """SELECT * FROM svn_item_t WHERE parent_id==:parent_id"""
+    get_immediate_child_items_q = """SELECT * FROM svn_item_t WHERE parent_id==:parent_id"""
 
     def __init__(self, db_master) -> None:
         super().__init__()
@@ -288,10 +289,12 @@ class SVNTable(object):
                                     "file-sizes": self.read_file_sizes
                                     }
 
-        self.write_func_by_format = {"text": self.write_as_text,}
+        self.write_func_by_format = {"text": self.write_as_text, }
         self.files_read_list: List[os.PathLike] = list()
         self.files_written_list: List[os.PathLike] = list()
         self.comments: List[str] = list()
+        self.num_digits_repo_rev_hierarchy = None
+        self.num_digits_per_folder_repo_rev_hierarchy = None
 
     def __repr__(self) -> str:
         return "\n".join([item.__repr__() for item in self.get_items()])
@@ -325,12 +328,14 @@ class SVNTable(object):
         yield
         self.create_indexes()
 
-    def read_from_file(self, in_file, a_format="guess", disable_indexes_during_read=False, progress_callback=None) -> None:
+    def read_from_file(self, in_file, a_format="guess", disable_indexes_during_read=False,
+                       progress_callback=None) -> None:
         """ Reads from file. All previous sub items are cleared
             before reading, unless the a_format is 'props' in which case
             the properties are added to existing sub items.
             raises ValueError is a_format is not supported.
         """
+        # utils.add_to_actions_stack(f"""reading file {in_file}'""")
         if in_file in self.files_read_list:
             log.info(f"SVNTable.read_from_file skipping '{in_file}': file was already read")
             return
@@ -377,13 +382,13 @@ class SVNTable(object):
                     row_data.append(a_record.get("Checksum", None))
                     row_data.extend(self.level_parent_and_leaf_from_path(a_record["Path"]))  # level, parent, leaf
                     if a_record["Node Kind"] == "file":
-                        row_data.append('f')        # flags
-                        row_data.append(1)          # fileFlag
-                        row_data.append(1 if utils.wtar_file_re.match(a_record["Path"]) else 0)                     # wtarFlag
+                        row_data.append('f')  # flags
+                        row_data.append(1)  # fileFlag
+                        row_data.append(1 if utils.wtar_file_re.match(a_record["Path"]) else 0)  # wtarFlag
                     elif a_record["Node Kind"] == "directory":
                         row_data.append('d')
-                        row_data.append(0)         # fileFlag
-                        row_data.append(0)         # wtarFlag
+                        row_data.append(0)  # fileFlag
+                        row_data.append(0)  # wtarFlag
 
                     row_data.extend((0, 0, ""))  # required, need_download, extra_props
                     return row_data
@@ -435,7 +440,8 @@ class SVNTable(object):
                     if len(row) == 6 and row[5].startswith("dl_path:"):
                         row.insert(5, None)
                     info_map_line_defaults = ('!path!', '!flags!', '!repo-rev!', None, 0, None, None)
-                    row_data = list(utils.iter_complete_to_longest(row, info_map_line_defaults))  # path, flags, revision, checksum, size, url, dl_path
+                    row_data = list(utils.iter_complete_to_longest(row,
+                                                                   info_map_line_defaults))  # path, flags, revision, checksum, size, url, dl_path
                     if row_data[6] is not None:
                         if match := dl_path_re.match(row_data[6]):
                             row_data[6] = match['ld_path']
@@ -483,7 +489,8 @@ class SVNTable(object):
     def valid_write_formats(self) -> List[str]:
         return list(self.write_func_by_format.keys())
 
-    def write_to_file(self, in_file, in_format="guess", comments=True, items_list=None, field_to_write=None, progress_callback=None) -> None:
+    def write_to_file(self, in_file, in_format="guess", comments=True, items_list=None, field_to_write=None,
+                      progress_callback=None) -> None:
         """ pass in_file=None to output to stdout.
             in_format is either text, yaml, pickle
         """
@@ -495,7 +502,8 @@ class SVNTable(object):
             in_format = map_info_extension_to_format[extension[1:]]
         if in_format in list(self.write_func_by_format.keys()):
             with utils.write_to_file_or_stdout(in_file) as wfd:
-                self.write_func_by_format[in_format](wfd, items_list, comments, field_to_write=field_to_write, progress_callback=progress_callback)
+                self.write_func_by_format[in_format](wfd, items_list, comments, field_to_write=field_to_write,
+                                                     progress_callback=progress_callback)
                 self.files_written_list.append(in_file)
         else:
             raise ValueError(f"Unknown write in_format {in_format}")
@@ -513,13 +521,13 @@ class SVNTable(object):
 
     def initialize_from_folder(self, in_folder, progress_callback=None) -> None:
         def yield_row(_in_folder_) -> Generator:
-            base_folder_len = len(_in_folder_)+1
+            base_folder_len = len(_in_folder_) + 1
             for root, dirs, files in os.walk(_in_folder_, followlinks=False):
                 for item in sorted(files + dirs):
-                    if item == ".DS_Store": # temp hack, list of ignored files should be moved to a variable
+                    if item == ".DS_Store":  # temp hack, list of ignored files should be moved to a variable
                         continue
                     row_data = list()
-                    full_path  = os.path.join(root, item)
+                    full_path = os.path.join(root, item)
                     relative_path = full_path[base_folder_len:]
                     row_data.append(relative_path)  # path
                     # check for link first: os.path.isdir returns True for a link to dir
@@ -533,7 +541,7 @@ class SVNTable(object):
                     else:
                         flags = "d"
                     row_data.append(flags)  # flags
-                    row_data.append(0)      # revision
+                    row_data.append(0)  # revision
                     row_data.extend(self.level_parent_and_leaf_from_path(relative_path))  # level, parent, leaf
                     row_data.append(1 if 'f' in flags else 0)  # fileFlag
                     row_data.append(1 if 's' in flags else 0)  # symlinkFlag
@@ -660,9 +668,11 @@ class SVNTable(object):
                             if path is not None:
                                 prop_name = match['prop_name']
                                 if prop_name in prop_name_to_flag:
-                                    prop_name_to_flag_query_params.append({"new_prop": prop_name_to_flag[prop_name], "old_path": path})
+                                    prop_name_to_flag_query_params.append(
+                                        {"new_prop": prop_name_to_flag[prop_name], "old_path": path})
                                 elif prop_name not in props_to_ignore:
-                                    not_in_props_to_ignore_query_params.append({"prop_name": prop_name, "old_path": path})
+                                    not_in_props_to_ignore_query_params.append(
+                                        {"prop_name": prop_name, "old_path": path})
                     else:
                         ValueError(f"no match at file: {rfd.name}, line: {line_num}: {line}")
                 prop_name_to_flag_query = """UPDATE svn_item_t SET flags = flags || :new_prop WHERE path = :old_path;"""
@@ -725,6 +735,7 @@ class SVNTable(object):
                 retVal = SVNRow(the_item)
         return retVal
 
+    #oren TODO: perhaps we can do this actions on the previous walk on this folder
     def get_files_that_should_be_removed_from_sync_folder(self, files_to_check, progress_callback=None) -> List[int]:
         """
         :param files_to_check: a list of tuples [(partial_path, full_path), ...]
@@ -733,7 +744,8 @@ class SVNTable(object):
         """
         retVal = list()
 
-        with self.db.transaction(description="get_files_that_should_be_removed_from_sync_folder", progress_callback=progress_callback) as curs:
+        with self.db.transaction(description="get_files_that_should_be_removed_from_sync_folder",
+                                 progress_callback=progress_callback) as curs:
             create_table_text = """CREATE TEMP TABLE cache_folder_file_paths_t (path TEXT, remove BOOLEAN DEFAULT 1);"""
             curs.execute(create_table_text)
 
@@ -753,14 +765,15 @@ class SVNTable(object):
 
             path_that_should_stay_q = """
                     INSERT INTO do_not_remove_file_paths_t (path)  
-                    select install_sources_t.detail_value||"%" as __path
-                    from index_item_detail_t AS install_sources_t, index_item_detail_t as info_map_t
-                    where install_sources_t.detail_name == "install_sources"
-                            and info_map_t.detail_name == "info_map"
-                            and info_map_t.owner_iid == install_sources_t.owner_iid
-                    Union
-                    select svn_item_t.path as __path from svn_item_t
-                    order by __path
+                    SELECT install_sources_t.detail_value||"%" as __path
+                    FROM index_item_detail_t AS install_sources_t, index_item_detail_t as info_map_t
+                    WHERE install_sources_t.detail_name == "install_sources"
+                            AND info_map_t.detail_name == "info_map"
+                            AND info_map_t.owner_iid == install_sources_t.owner_iid
+                            AND install_sources_t.detail_value NOT IN (SELECT path FROM svn_item_t)
+                   UNION 
+                    SELECT svn_item_t.path as __path from svn_item_t
+                    ORDER BY __path
                     """
             curs.execute(path_that_should_stay_q)
 
@@ -897,7 +910,7 @@ class SVNTable(object):
         :return: all items returned by applying the filter called filter_name
         """
         if what not in ("any", "file", "dir"):
-            raise ValueError(what+" not a valid filter for get_item")
+            raise ValueError(what + " not a valid filter for get_item")
 
         if what == "file":
             query_text = """
@@ -1124,7 +1137,7 @@ class SVNTable(object):
                     AND path LIKE :dir_item_path
                     """
                 curs.execute(query_text, {'dir_item_level': dir_item.level,
-                                          'dir_item_path': dir_item.path+"/%"})
+                                          'dir_item_path': dir_item.path + "/%"})
                 retVal = curs.rowcount
         else:
             # it might be a dir that was wtarred
@@ -1182,7 +1195,8 @@ class SVNTable(object):
             AND fileFlag == 1
             AND need_to_download_file(download_path, checksum)
             """
-        with self.db.transaction("mark_need_download", progress_callback=progress_callback) as curs:
+        with self.db.transaction("mark_need_download", progress_callback=progress_callback,
+                                 progress_callback_n_instructions=1024 * 10) as curs:
             curs.execute(query_text)
         # mark folders of files that need download
         query_text = """
@@ -1203,7 +1217,8 @@ class SVNTable(object):
             SET need_download=1
             WHERE _id IN (SELECT __PARENT_ID FROM get_parents)
             """
-        with self.db.transaction(description="mark_need_download_recursive", progress_callback=progress_callback) as curs:
+        with self.db.transaction(description="mark_need_download_recursive",
+                                 progress_callback=progress_callback) as curs:
             curs.execute(query_text)
 
     def mark_required_for_revision(self, required_revision) -> None:
@@ -1301,7 +1316,8 @@ class SVNTable(object):
             SET required=1
             WHERE _id IN (SELECT __ID FROM get_parents);
         """
-        with self.db.transaction(description="mark_required_files_for_active_items", progress_callback=progress_callback) as curs:
+        with self.db.transaction(description="mark_required_files_for_active_items",
+                                 progress_callback=progress_callback) as curs:
             curs.executescript(script_text)
 
     def get_download_roots(self) -> List[str]:
@@ -1346,6 +1362,7 @@ class SVNTable(object):
                       AND index_item_detail_t.detail_value == :infomap_name)
                     """, {"infomap_name": infomap_name})
 
+    # TODO: orem mayb use this function
     def get_items_for_default_infomap(self) -> List[SVNRow]:
         with self.db.selection() as curs:
             curs.execute("""
@@ -1503,28 +1520,52 @@ class SVNTable(object):
         retVal = self.db.select_and_fetchall(query_text)
         return retVal
 
-    def get_sync_base_url_for_iid(self, iid: str, default_url: str, cache: Dict) -> str:
+    @lru_cache(maxsize=None)
+    def get_sync_base_url_for_iid(self, iid: str, default_url: str) -> str:
         """ find the base url for downloading files belonging to a specific iid
             if not found return the default_url.
             results are cached to avoid calling the database for each file
         """
-        sync_base_url = cache.get(iid, None)
-        if sync_base_url is None:
-            query_text = f"""
-                SELECT index_item_detail_t.detail_value AS the_url, min(index_item_detail_t.generation) AS gen FROM index_item_detail_t
-                WHERE
-                        index_item_detail_t.owner_iid == "{iid}"
-                    AND
-                        index_item_detail_t.detail_name == "sync_base_url"
-                LIMIT 1
-            """
-            # sqlite execute will return 1 row with empty values if nothing was found. Not sure why.
-            base_url_rows = self.db.select_and_fetchall(query_text)
-            if len(base_url_rows) > 0 and len(base_url_rows[0]) > 0 and base_url_rows[0][0] is not None:
-                sync_base_url = base_url_rows[0]['the_url']
-            else:
-                sync_base_url = default_url
-            sync_base_url = config_vars.resolve_str(sync_base_url)
-            cache[iid] = sync_base_url
+        query_text = f"""
+            SELECT index_item_detail_t.detail_value AS the_url, min(index_item_detail_t.generation) AS gen FROM index_item_detail_t
+            WHERE
+                    index_item_detail_t.owner_iid == "{iid}"
+                AND
+                    index_item_detail_t.detail_name == "sync_base_url"
+            LIMIT 1
+        """
+        # sqlite execute will return 1 row with empty values if nothing was found. Not sure why.
+        base_url_rows = self.db.select_and_fetchall(query_text)
+        if len(base_url_rows) > 0 and len(base_url_rows[0]) > 0 and base_url_rows[0][0] is not None:
+            sync_base_url = base_url_rows[0]['the_url']
+        else:
+            sync_base_url = default_url
+        sync_base_url = config_vars.resolve_str(sync_base_url)
 
         return sync_base_url
+
+    @lru_cache(maxsize=None)
+    def repo_rev_to_folder_hierarchy(self, repo_rev):
+        retVal = str(repo_rev)
+        try:
+            if self.num_digits_repo_rev_hierarchy is None:
+                self.num_digits_repo_rev_hierarchy = int(config_vars["NUM_DIGITS_REPO_REV_HIERARCHY"])
+            if self.num_digits_per_folder_repo_rev_hierarchy is None:
+                self.num_digits_per_folder_repo_rev_hierarchy = int(
+                    config_vars["NUM_DIGITS_PER_FOLDER_REPO_REV_HIERARCHY"])
+            if self.num_digits_repo_rev_hierarchy > 0 and self.num_digits_per_folder_repo_rev_hierarchy > 0:
+                zero_pad_repo_rev = str(repo_rev).zfill(self.num_digits_repo_rev_hierarchy)
+                by_groups = [zero_pad_repo_rev[i:i + self.num_digits_per_folder_repo_rev_hierarchy] for i in
+                             range(0, len(zero_pad_repo_rev), self.num_digits_per_folder_repo_rev_hierarchy)]
+                retVal = "/".join(by_groups)
+        except Exception as ex:
+            pass
+        return retVal
+
+    def get_sync_url_for_file_item(self, file_item: SVNRow):
+        retVal = file_item.url #TODO: figure out when this value is set
+        if retVal is None:
+            repo_rev_folder_hierarchy = self.repo_rev_to_folder_hierarchy(file_item.revision)
+            sync_base_url = self.get_sync_base_url_for_iid(file_item.needed_for_iid, "$(SYNC_BASE_URL)")
+            retVal = '/'.join(utils.make_one_list(sync_base_url, repo_rev_folder_hierarchy, file_item.path))
+        return retVal

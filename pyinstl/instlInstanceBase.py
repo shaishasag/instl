@@ -24,8 +24,24 @@ from db import DBManager
 from pybatch import *
 
 from .curlHelper import CUrlHelper
+import functools
 
 log = logging.getLogger()
+
+
+if False:
+    # decorator to set the correct "doing" message
+    class DoingDecorator:
+        def __init__(self, message):
+            self.message = message
+
+        def __call__(self, func):
+            def decorated_func(*args, **kwargs):
+                print(f"going in {self.message}")
+                retVal = func(*args, **kwargs)
+                print(f"going out {self.message}")
+            return decorated_func
+
 
 
 value_ref_re = re.compile(r"""
@@ -175,11 +191,13 @@ class InstlInstanceBase(DBManager, ConfigVarYamlReader, metaclass=abc.ABCMeta):
 
         self.read_user_config()
 
+    #@DoingDecorator("read_defaults_file")
     def read_defaults_file(self, file_name, allow_reading_of_internal_vars=True, ignore_if_not_exist=True):
         """ read class specific file from defaults/class_name.yaml """
         name_specific_defaults_file_path = config_vars["__INSTL_DEFAULTS_FOLDER__"].Path().joinpath(file_name + ".yaml").resolve()
         self.read_yaml_file(name_specific_defaults_file_path, ignore_if_not_exist=ignore_if_not_exist, allow_reading_of_internal_vars=allow_reading_of_internal_vars)
 
+    #@DoingDecorator("read_user_config")
     def read_user_config(self):
         user_config_path = config_vars["__USER_CONFIG_FILE_PATH__"].str()
         self.read_yaml_file(user_config_path, ignore_if_not_exist=True, allow_reading_of_internal_vars=True)
@@ -190,13 +208,16 @@ class InstlInstanceBase(DBManager, ConfigVarYamlReader, metaclass=abc.ABCMeta):
             msg = "Prerequisite variables were not defined: " + ", ".join(missing_vars)
             raise ValueError(msg)
 
+    #@DoingDecorator("init_from_cmd_line_options")
     def init_from_cmd_line_options(self, cmd_line_options_obj):
         """ turn command line options into variables """
 
         if "__MAIN_COMMAND__" in config_vars:
             self.the_command = str(config_vars["__MAIN_COMMAND__"])
             self.fixed_command = self.the_command.replace('-', '_')
-        if self.the_command in self.commands_that_need_memory_db:
+        # to do: in python3.8 with the new sqlite.backup function, memory database
+        # can be writen to disk if needed
+        if getattr(sys, 'frozen', False) or self.the_command in self.commands_that_need_memory_db:
             config_vars['__MAIN_DB_FILE__'] = ':memory:'
         DBManager.set_refresh_db_file(self.the_command in self.commands_that_need_to_refresh_db_file)
 
@@ -266,6 +287,7 @@ class InstlInstanceBase(DBManager, ConfigVarYamlReader, metaclass=abc.ABCMeta):
                 self.read_include_node(sub_i_node, *args, **kwargs)
         elif i_node.isMapping():
             if "url" in i_node:
+                file_was_downloaded_and_read = False
                 kwargs['original-path-to-file'] = i_node["url"].value
                 resolved_file_url = config_vars.resolve_str(i_node["url"].value)
                 expected_checksum = None
@@ -280,6 +302,7 @@ class InstlInstanceBase(DBManager, ConfigVarYamlReader, metaclass=abc.ABCMeta):
                                                                 cache_folder=self.get_aux_cache_dir(make_dir=True),
                                                                 expected_checksum=expected_checksum)
                     self.read_yaml_file(file_path, *args, **kwargs)
+                    file_was_downloaded_and_read = True
                 except (FileNotFoundError, urllib.error.URLError):
                     ignore = kwargs.get('ignore_if_not_exist', False)
                     if ignore:
@@ -287,7 +310,7 @@ class InstlInstanceBase(DBManager, ConfigVarYamlReader, metaclass=abc.ABCMeta):
                     else:
                         raise
 
-                if "copy" in i_node:
+                if "copy" in i_node and file_was_downloaded_and_read:
                     self.batch_accum.set_current_section('post')
                     for copy_destination in i_node["copy"]:
                         need_to_copy = True
@@ -491,21 +514,6 @@ class InstlInstanceBase(DBManager, ConfigVarYamlReader, metaclass=abc.ABCMeta):
             log.info("Could not load installItemGraph")
             return None
 
-    def repo_rev_to_folder_hierarchy(self, repo_rev):
-        retVal = str(repo_rev)
-        try:
-            if self.num_digits_repo_rev_hierarchy is None:
-                self.num_digits_repo_rev_hierarchy=int(config_vars["NUM_DIGITS_REPO_REV_HIERARCHY"])
-            if self.num_digits_per_folder_repo_rev_hierarchy is None:
-                self.num_digits_per_folder_repo_rev_hierarchy=int(config_vars["NUM_DIGITS_PER_FOLDER_REPO_REV_HIERARCHY"])
-            if self.num_digits_repo_rev_hierarchy > 0 and self.num_digits_per_folder_repo_rev_hierarchy > 0:
-                zero_pad_repo_rev = str(repo_rev).zfill(self.num_digits_repo_rev_hierarchy)
-                by_groups = [zero_pad_repo_rev[i:i+self.num_digits_per_folder_repo_rev_hierarchy] for i in range(0, len(zero_pad_repo_rev), self.num_digits_per_folder_repo_rev_hierarchy)]
-                retVal = "/".join(by_groups)
-        except Exception as ex:
-            pass
-        return retVal
-
     def handle_yaml_read_error(self, **kwargs):
         try:
             the_node_stack = kwargs.get('node-stack', "unknown")
@@ -522,3 +530,22 @@ class InstlInstanceBase(DBManager, ConfigVarYamlReader, metaclass=abc.ABCMeta):
             log.error("\n".join(yaml_read_errors))
         except Exception as ex:
             pass
+
+    def verify_actions(self):
+
+        self.items_table.activate_all_oses()
+        actions_list = self.items_table.get_all_actions_from_index()
+        all_pybatch_commands = self.python_batch_names
+        # Each row has: original_iid, detail_name, detail_value, os_id, _id
+        for row in actions_list:
+            try:
+                if row['detail_value']:  # it's OK for action to have None value, but no need to check them
+                    actions = config_vars.resolve_str_to_list(row['detail_value'])
+                    if actions:
+                        for action in actions:
+                            try:
+                                EvalShellCommand(action, None, all_pybatch_commands, raise_on_error=True)
+                            except ValueError as ve:
+                                logging.warning(f"syntax error for an action in IID '{row['original_iid']}': {row['detail_name']}: {row['detail_value']}")
+            except Exception:
+                log.warning(f"Exception in verify_actions for IID '{row['original_iid']}': {row['detail_name']}")

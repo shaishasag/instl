@@ -435,6 +435,7 @@ class IndexItemsTable(object):
         return retVal
 
     def resolve_inheritance(self) -> None:
+        # utils.add_to_actions_stack("resolving inheritance")
         inherit_order, inherit_dict = self.prepare_inherit_order()
         resolve_items_script = ""
         if bool(config_vars.get("DEBUG_INDEX_DB", False)):
@@ -444,13 +445,13 @@ class IndexItemsTable(object):
                         resolve_item_script = self.get_resolve_item_query_for_iid(iid, inherit_dict[iid])
                         curs.executescript(resolve_item_script)
                     except sqlite3.IntegrityError as ex:
-                        log.info(f"db exception resolving inheritance for {iid}")
+                        log.info(f"db exception resolving inheritance for {iid}, {ex}")
                 curs.execute("""CREATE INDEX IF NOT EXISTS ix_svn_index_item_detail_t_owner_iid ON index_item_detail_t(owner_iid)""")
         else:
             for iid in inherit_order:
                 resolve_items_script += self.get_resolve_item_query_for_iid(iid, inherit_dict[iid])
             with self.db.transaction() as curs:
-                curs.executescript(resolve_items_script)
+                curs.executescript(resolve_items_script) #to imporove perofrmance we first execute, then create the index
                 curs.execute("""CREATE INDEX IF NOT EXISTS ix_svn_index_item_detail_t_owner_iid ON index_item_detail_t(owner_iid)""")
                 # creating these indexes did not improve DB performance and added 20s to preparing __ALL_GUIDS__ installation
                 #curs.execute("""CREATE INDEX IF NOT EXISTS ix_svn_index_item_detail_t_value ON index_item_detail_t(detail_value)""")
@@ -1423,5 +1424,16 @@ class IndexItemsTable(object):
                     OR version_win IS NOT NULL;
                     """
 
+        retVal = self.db.select_and_fetchall(query_text)
+        return retVal
+
+    def get_all_actions_from_index(self):
+        action_string = "','".join(self.action_types)
+        action_string = "'" + action_string + "'"
+        query_text = f""" SELECT original_iid, detail_name, detail_value, os_id, _id
+                    FROM index_item_detail_t
+                    WHERE detail_name IN ({action_string}) 
+                    ORDER BY _id    
+                """
         retVal = self.db.select_and_fetchall(query_text)
         return retVal

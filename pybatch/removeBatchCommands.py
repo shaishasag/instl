@@ -7,6 +7,7 @@ from typing import List
 import logging
 import utils
 from pybatch import PythonBatchCommandBase
+from configVar import config_vars
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class RmFile(PythonBatchCommandBase, kwargs_defaults={'resolve_path': True}):
         self.exceptions_to_ignore.append(FileNotFoundError)
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(utils.quoteme_raw_by_type(self.path))
+        all_args.append(self.unnamed__init__param(self.path))
 
     def progress_msg_self(self):
         return f"""Remove file '{self.path}'"""
@@ -61,6 +62,7 @@ class RmFile(PythonBatchCommandBase, kwargs_defaults={'resolve_path': True}):
                         with FixAllPermissions(resolved_path, report_own_progress=False) as allower:
                             allower()
                 else:
+                    self.who_locks_file_error_dict(Path.unlink, resolved_path)
                     raise
 
 
@@ -76,7 +78,7 @@ class RmDir(PythonBatchCommandBase):
         self.exceptions_to_ignore.append(FileNotFoundError)
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(utils.quoteme_raw_by_type(self.path))
+        all_args.append(self.unnamed__init__param(self.path))
 
     def progress_msg_self(self):
         return f"""Remove directory '{self.path}'"""
@@ -94,7 +96,7 @@ class RmDir(PythonBatchCommandBase):
         for attempt in range(2):
             try:
                 self.doing = f"""removing folder '{resolved_path}'"""
-                shutil.rmtree(resolved_path)
+                shutil.rmtree(resolved_path, onerror=self.who_locks_file_error_dict)
                 break
             except FileNotFoundError:
                 break
@@ -126,7 +128,7 @@ class RmFileOrDir(PythonBatchCommandBase):
         self.exceptions_to_ignore.append(FileNotFoundError)
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(utils.quoteme_raw_by_type(self.path))
+        all_args.append(self.unnamed__init__param(self.path))
 
     def progress_msg_self(self):
         return f"""Remove '{self.path}'"""
@@ -141,7 +143,7 @@ class RmFileOrDir(PythonBatchCommandBase):
                 resolved_path.unlink()
             elif resolved_path.is_dir():
                 self.doing = f"""removing folder'{resolved_path}'"""
-                shutil.rmtree(resolved_path)
+                shutil.rmtree(resolved_path, onerror=self.who_locks_file_error_dict)
         except Exception as ex:
             if retry:
                 kwargs["retry"] = False
@@ -160,24 +162,24 @@ class RemoveEmptyFolders(PythonBatchCommandBase, kwargs_defaults={"files_to_igno
     - 'files_to_ignore' is a list of file names will be ignored, i.e. if a folder contains only these files
     it will be considered empty and will be removed
     """
-    def __init__(self, folder_to_remove: os.PathLike, **kwargs) -> None:
+    def __init__(self, folder_to_check: os.PathLike, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.folder_to_remove = folder_to_remove
+        self.folder_to_check = folder_to_check
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(f'''{utils.quoteme_raw_by_type(self.folder_to_remove)}''')
+        all_args.append(self.unnamed__init__param(self.folder_to_check))
 
     def progress_msg_self(self) -> str:
-        return f"""Remove empty directory '{self.folder_to_remove}'"""
+        return f"""Remove empty directory '{self.folder_to_check}'"""
 
     def __call__(self, *args, **kwargs) -> None:
         PythonBatchCommandBase.__call__(self, *args, **kwargs)
-        resolved_folder_to_remove = utils.ExpandAndResolvePath(self.folder_to_remove)
+        resolved_folder_to_check = utils.ExpandAndResolvePath(self.folder_to_check)
 
         # addition of "a^" to make sure empty self.files_to_ignore does not ignore any file
         files_to_ignore_regex = re.compile("|".join(self.files_to_ignore+["a^"]))
 
-        for root_path, dir_names, file_names in os.walk(resolved_folder_to_remove, topdown=False, onerror=None, followlinks=False):
+        for root_path, dir_names, file_names in os.walk(resolved_folder_to_check, topdown=False, onerror=None, followlinks=False):
             # when topdown=False os.walk creates dir_names for each root_path at the beginning and has
             # no knowledge if a directory has already been deleted.
             existing_dirs = [dir_name for dir_name in dir_names if os.path.isdir(os.path.join(root_path, dir_name))]
@@ -217,8 +219,8 @@ class RmGlob(PythonBatchCommandBase):
         self.exceptions_to_ignore.append(FileNotFoundError)
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(utils.quoteme_raw_by_type(self.path_to_folder))
-        all_args.append(utils.quoteme_raw_by_type(self.pattern))
+        all_args.append(self.unnamed__init__param(self.path_to_folder))
+        all_args.append(self.unnamed__init__param(self.pattern))
 
     def progress_msg_self(self):
         return f"""Remove pattern '{self.pattern}' from {self.path_to_folder}"""
@@ -234,6 +236,7 @@ class RmGlob(PythonBatchCommandBase):
                 with RmFileOrDir(item, own_progress_count=0) as rfod:
                     rfod()
 
+
 class RmGlobs(PythonBatchCommandBase):
     """ remove files matching any pattern in the given list
         - all files and folders matching the patterns will be removed
@@ -247,9 +250,9 @@ class RmGlobs(PythonBatchCommandBase):
         self.exceptions_to_ignore.append(FileNotFoundError)
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(utils.quoteme_raw_by_type(self.path_to_folder))
+        all_args.append(self.unnamed__init__param(self.path_to_folder))
         for pattern in self.patterns:
-            all_args.append(utils.quoteme_raw_by_type(pattern))
+            all_args.append(self.unnamed__init__param(pattern))
 
     def progress_msg_self(self):
         return f"""Remove patterns '{self.patterns}' from {self.path_to_folder}"""
@@ -283,8 +286,7 @@ class RmDirContents(PythonBatchCommandBase):
 
     def repr_own_args(self, all_args: List[str]) -> None:
         all_args.append(self.unnamed__init__param(self.path_to_folder))
-        if self.exclude:
-            all_args.append(self.named__init__param("exclude", self.exclude))
+        all_args.append(self.optional_named__init__param("exclude", self.exclude, []))
 
     def progress_msg_self(self):
         return f"""Remove Dir Contents {self.path_to_folder}"""

@@ -14,6 +14,7 @@ from .conditionalBatchCommands import IsConfigVarEq
 from .conditionalBatchCommands import IsConfigVarNotEq
 from .conditionalBatchCommands import IsEnvironVarEq
 from .conditionalBatchCommands import IsEnvironVarNotEq
+from .conditionalBatchCommands import IsConfigVarDefined
 
 from .copyBatchCommands import CopyDirContentsToDir
 from .copyBatchCommands import CopyDirToDir
@@ -40,6 +41,7 @@ from .reportingBatchCommands import ReadConfigVarsFromFile
 from .reportingBatchCommands import ReadConfigVarValueFromTextFile
 from .reportingBatchCommands import EnvironVarAssign
 from .reportingBatchCommands import PatchPyBatchWithTimings
+from .reportingBatchCommands import Print
 
 from .removeBatchCommands import RmDir
 from .removeBatchCommands import RmFile
@@ -64,6 +66,8 @@ from .fileSystemBatchCommands import Ls
 from .fileSystemBatchCommands import FileSizes
 from .fileSystemBatchCommands import SplitFile
 from .fileSystemBatchCommands import FixAllPermissions
+from .fileSystemBatchCommands import Glober
+#from .fileSystemBatchCommands import AdvisoryFileLock
 
 from .subprocessBatchCommands import ParallelRun
 from .subprocessBatchCommands import ShellCommands
@@ -76,6 +80,7 @@ from .subprocessBatchCommands import Subprocess
 from .subprocessBatchCommands import ExternalPythonExec
 from .subprocessBatchCommands import SysExit
 from .subprocessBatchCommands import Raise
+from .subprocessBatchCommands import KillProcess
 
 from .wtarBatchCommands import Wtar, Unwtar, Wzip, Unwzip
 
@@ -102,6 +107,8 @@ from .svnBatchCommands import SVNSetProp
 from .svnBatchCommands import SVNDelProp
 from .svnBatchCommands import SVNCleanup
 
+from .downloadBatchCommands import DownloadFileAndCheckChecksum
+
 if sys.platform == "win32":
     from .WinOnlyBatchCommands import WinShortcut
     from .WinOnlyBatchCommands import BaseRegistryKey
@@ -123,10 +130,41 @@ if sys.platform == "darwin":
     from .MacOnlyBatchCommands import SymlinkFileToSymlink
     from .MacOnlyBatchCommands import SymlinkToSymlinkFile
 
+    #Added for test purposes, without those classes verify_actions gives false positives/negatives
+    class PythonBatchCommandDummy(PythonBatchCommandBase):
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+        def __call__(self, *args, **kwargs) -> None:
+            pass
+        def progress_msg_self(self, *args, **kwargs):
+            pass
+
+    class WinShortcut(PythonBatchCommandDummy):
+        pass
+
+    class CreateRegistryValues(PythonBatchCommandDummy):
+        pass
+
+    class ReadRegistryValue(PythonBatchCommandDummy):
+        pass
+
+    class CreateRegistryKey(PythonBatchCommandDummy):
+        pass
+
+    class DeleteRegistryKey(PythonBatchCommandDummy):
+        pass
+
+    class DeleteRegistryValues(PythonBatchCommandDummy):
+        pass
+
+    class ResHackerCompileResource(PythonBatchCommandDummy):#??
+        pass
+
+
 from .new_batchCommands import *
 
 
-def EvalShellCommand(action_str: str, message: str, python_batch_names=None) -> PythonBatchCommandBase:
+def EvalShellCommand(action_str: str, message: str, python_batch_names=None, raise_on_error=False) -> PythonBatchCommandBase:
     """ shell commands from index can be evaled to a PythonBatchCommand, otherwise a ShellCommand is instantiated
     """
     retVal = Echo(message)
@@ -140,6 +178,10 @@ def EvalShellCommand(action_str: str, message: str, python_batch_names=None) -> 
         if python_batch_names:
             assumed_command_name = action_str[:action_str.find('(')]
             if assumed_command_name in python_batch_names:
-                log.warning(f"""'{action_str}' was evaled as ShellCommand not as python batch""")
+                if raise_on_error:
+                    raise ValueError()
+                else:
+                    log.warning(f"""'{action_str}' was evaled as ShellCommand not as python batch""")
 
     return retVal
+

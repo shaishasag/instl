@@ -9,6 +9,8 @@ import subprocess
 from typing import List
 from threading import Thread
 import utils
+import psutil
+import time
 from .baseClasses import PythonBatchCommandBase
 
 import logging
@@ -35,14 +37,21 @@ class RunProcessBase(PythonBatchCommandBase, call__call__=True, is_context_manag
         self.script = kwargs.get('script', False)
         self.stderr = ''  # for log_results
 
+
     @abc.abstractmethod
     def get_run_args(self, run_args) -> None:
         raise NotImplementedError
 
     def __call__(self, *args, **kwargs):
+        """ Normally list of arguments are calculated by calling self.get_run_args,
+            unless kwargs["run_args"] exists.
+        """
         PythonBatchCommandBase.__call__(self, *args, **kwargs)
         run_args = list()
-        self.get_run_args(run_args)
+        if "run_args" in kwargs:
+            run_args.extend(kwargs["run_args"])
+        else:
+            self.get_run_args(run_args)
         run_args = list(map(str, run_args))
         self.doing = f"""calling subprocess '{" ".join(run_args)}'"""
         if self.detach:
@@ -105,6 +114,7 @@ class RunProcessBase(PythonBatchCommandBase, call__call__=True, is_context_manag
                 completed_process.returncode = 0
 
             completed_process.check_returncode()
+
             self.handle_completed_process(completed_process)
 
     def handle_completed_process(self, completed_process):
@@ -140,13 +150,13 @@ class CUrl(RunProcessBase):
         self.retry_delay = retry_delay
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(f"""src={utils.quoteme_raw_by_type(self.src)}""")
-        all_args.append(f"""trg={utils.quoteme_raw_by_type(self.trg)}""")
-        all_args.append(f"""curl_path={utils.quoteme_raw_by_type(self.curl_path)}""")
-        all_args.append(f"""connect_time_out={self.connect_time_out}""")
-        all_args.append(f"""max_time={self.max_time}""")
-        all_args.append(f"""retires={self.retires}""")
-        all_args.append(f"""retry_delay={self.retry_delay}""")
+        all_args.append(self.named__init__param("src", self.src))
+        all_args.append(self.named__init__param("trg", self.trg))
+        all_args.append(self.named__init__param("curl_path", self.curl_path))
+        all_args.append(self.named__init__param("connect_time_out", self.connect_time_out))
+        all_args.append(self.named__init__param("max_time", self.max_time))
+        all_args.append(self.named__init__param("retires", self.retires))
+        all_args.append(self.named__init__param("retry_delay", self.retry_delay))
 
     def progress_msg_self(self):
         return f"""Download '{self.src}' to '{self.trg}'"""
@@ -173,6 +183,7 @@ class CUrl(RunProcessBase):
 class ShellCommand(RunProcessBase):
     """ run a single command in a shell """
 
+
     def __init__(self, shell_command, message=None, ignore_specific_exit_codes=(), **kwargs):
         kwargs["shell"] = True
         super().__init__(ignore_specific_exit_codes=ignore_specific_exit_codes, **kwargs)
@@ -180,14 +191,13 @@ class ShellCommand(RunProcessBase):
         self.message = message
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(utils.quoteme_raw_by_type(self.shell_command))
-        if self.message:
-            all_args.append(f"""message={utils.quoteme_raw_by_type(self.message)}""")
+        all_args.append(self.unnamed__init__param(self.shell_command))
+        all_args.append(self.optional_named__init__param("message", self.message))
         if self.ignore_specific_exit_codes:
             if len(self.ignore_specific_exit_codes,) == 1:
-                all_args.append(f"""ignore_specific_exit_codes={self.ignore_specific_exit_codes[0]}""")
+                all_args.append(self.named__init__param("ignore_specific_exit_codes", self.ignore_specific_exit_codes[0]))
             else:
-                all_args.append(f"""ignore_specific_exit_codes={self.ignore_specific_exit_codes}""")
+                all_args.append(self.named__init__param("ignore_specific_exit_codes", self.ignore_specific_exit_codes))
 
     def progress_msg_self(self):
         if self.message:
@@ -224,7 +234,7 @@ class ShellCommands(PythonBatchCommandBase):
     def repr_own_args(self, all_args: List[str]) -> None:
         quoted_shell_commands_list = utils.quoteme_raw_if_list(self.shell_command_list)
         all_args.append(f"""shell_command_list={quoted_shell_commands_list}""")
-        all_args.append(f"""message={utils.quoteme_raw_by_type(self.message)}""")
+        all_args.append(self.named__init__param("message", self.message))
 
     def progress_msg_self(self):
         return f"""{self.__class__.__name__}"""
@@ -262,7 +272,7 @@ class ParallelRun(PythonBatchCommandBase, kwargs_defaults={'action_name': None, 
         self.config_file = config_file
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(utils.quoteme_raw_by_type(self.config_file))
+        all_args.append(self.unnamed__init__param(self.config_file))
 
     def get_action_name(self):
         return self.action_name if self.action_name else self.__class__.__name__
@@ -285,11 +295,16 @@ class ParallelRun(PythonBatchCommandBase, kwargs_defaults={'action_name': None, 
                     args = shlex.split(line)
                     commands.append(args)
         try:
+
             self.doing = f"""{self.get_action_name()}, config file '{resolved_config_file}', running with {len(commands)} processes in parallel"""
             utils.run_processes_in_parallel(commands, self.shell)
         except SystemExit as sys_exit:
             if sys_exit.code != 0:
-                raise
+                if "curl" in commands[0]:
+                    err_msg = utils.get_curl_err_msg(sys_exit.code)
+                    raise Exception(err_msg)
+                else:
+                    raise
         finally:
             self.increment_progress()
 
@@ -302,11 +317,10 @@ class Exec(PythonBatchCommandBase):
         self.reuse_db = reuse_db
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(utils.quoteme_raw_by_type(self.python_file))
+        all_args.append(self.unnamed__init__param(self.python_file))
         if self.config_files:
-            all_args.append(utils.quoteme_raw_by_type(self.config_files))
-        if not self.reuse_db:
-            all_args.append(f"reuse_db={self.reuse_db}")
+            all_args.append(self.unnamed__init__param(self.config_files))
+        all_args.append(self.optional_named__init__param("reuse_db", self.reuse_db, True))
 
     def progress_msg_self(self):
         return f"""Executing '{self.python_file}'"""
@@ -340,8 +354,8 @@ class RunInThread(PythonBatchCommandBase):
         # what_to_run should not increment or report progress because there is no way to know when it will happen
         # so RunInThread takes over what_to_run's progress and reports it as if it is already done.
         all_args.append(repr(self.what_to_run))
-        all_args.append(self.optional_named__init__param('thread_name', self.thread_name, None))
-        all_args.append(self.optional_named__init__param('daemon', self.daemon, None))
+        all_args.append(self.optional_named__init__param('thread_name', self.thread_name))
+        all_args.append(self.optional_named__init__param('daemon', self.daemon))
 
     def progress_msg_self(self) -> str:
         return f''''''
@@ -384,16 +398,15 @@ class Subprocess(RunProcessBase):
 
     def repr_own_args(self, all_args: List[str]) -> None:
         try:
-            all_args.append(utils.quoteme_raw_by_type(self.subprocess_exe))
+            all_args.append(self.unnamed__init__param(self.subprocess_exe))
             for arg in self.subprocess_args:
-                all_args.append(utils.quoteme_raw_by_type(arg))
-            if self.message:
-                all_args.append(f"""message={utils.quoteme_raw_by_type(self.message)}""")
+                all_args.append(self.unnamed__init__param(arg))
+            all_args.append(self.optional_named__init__param("message", self.message))
             if self.ignore_specific_exit_codes:
                 if len(self.ignore_specific_exit_codes,) == 1:
-                    all_args.append(f"""ignore_specific_exit_codes={self.ignore_specific_exit_codes[0]}""")
+                    all_args.append(self.named__init__param("ignore_specific_exit_codes", self.ignore_specific_exit_codes[0]))
                 else:
-                    all_args.append(f"""ignore_specific_exit_codes={self.ignore_specific_exit_codes}""")
+                    all_args.append(self.named__init__param("ignore_specific_exit_codes", self.ignore_specific_exit_codes))
         except TypeError as te:
             pass
 
@@ -412,18 +425,18 @@ class Subprocess(RunProcessBase):
 
 
 class ExternalPythonExec(Subprocess):
-    '''A class that enables running python processes under the native python installed on the machine'''
+    """ A class that enables running python processes under the native python installed on the machine"""
     def __init__(self, *subprocess_args, **kwargs):
         '''Setting subprocess_exe to an empty string to exclude it from the repr'''
         super().__init__('', *subprocess_args, **kwargs)
 
     def repr_own_args(self, all_args: List[str]):
-        '''Removing subprocess_exe from the repr'''
+        """ Removing subprocess_exe from the repr"""
         super().repr_own_args(all_args)
         all_args.pop(0)  # Removing empty string
 
     def get_run_args(self, run_args) -> None:
-        '''Injecting the relevant OS python process into the run args instead of the empty string'''
+        """ Injecting the relevant OS python process into the run args instead of the empty string"""
         super().get_run_args(run_args)
         python_executables = {'win32': ['py',  '-3.6'], 'darwin': ['python3.6']}
         run_args.pop(0)  # Removing empty string
@@ -440,7 +453,7 @@ class SysExit(PythonBatchCommandBase):
         return f'''sys.exit({self.exit_code})'''
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(utils.quoteme_raw_by_type(self.exit_code))
+        all_args.append(self.unnamed__init__param(self.exit_code))
 
     def __call__(self, *args, **kwargs):
         PythonBatchCommandBase.__call__(self, *args, **kwargs)
@@ -457,7 +470,7 @@ class Raise(PythonBatchCommandBase):
         return f'''raising BogusException({self.message})'''
 
     def repr_own_args(self, all_args: List[str]) -> None:
-        all_args.append(self.optional_named__init__param("message", self.message, None))
+        all_args.append(self.optional_named__init__param("message", self.message))
 
     def __call__(self, *args, **kwargs):
         PythonBatchCommandBase.__call__(self, *args, **kwargs)
@@ -466,3 +479,42 @@ class Raise(PythonBatchCommandBase):
         class BogusException(RuntimeError):
             pass
         raise BogusException(f'bogus exception: {self.message}')
+
+
+class KillProcess(PythonBatchCommandBase):
+    def __init__(self, process_name, retries=2, sleep_sec=1, **kwargs):
+        super().__init__(**kwargs)
+        self.process_name = process_name
+        self.retries = retries
+        self.sleep_sec = sleep_sec
+
+    def progress_msg_self(self) -> str:
+        return f'''killing process {self.process_name}'''
+
+    def repr_own_args(self, all_args: List[str]) -> None:
+        all_args.append(self.unnamed__init__param(self.process_name))
+        all_args.append(self.optional_named__init__param("retries", self.retries, 2))
+        all_args.append(self.optional_named__init__param("sleep_sec", self.sleep_sec, 1))
+
+    def __call__(self, *args, **kwargs):
+        PythonBatchCommandBase.__call__(self, *args, **kwargs)
+        found_process = False
+        for i in range(self.retries):
+            print(f"looking for process named {self.process_name}")
+            for proc in psutil.process_iter():
+                if proc.name() == self.process_name:
+                    print(f"found process named {self.process_name}")
+                    found_process = True
+                    proc.kill()
+                    break
+            else:  # no process by that name was found
+                print(f"no process named {self.process_name}")
+                break
+            time.sleep(self.sleep_sec)
+
+        if found_process:  # make sure it's down
+            for i in range(self.retries):
+                for proc in psutil.process_iter():
+                    if proc.name() == self.process_name:
+                        raise TimeoutError(f"failed to kill process {self.process_name}")
+

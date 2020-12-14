@@ -418,6 +418,24 @@ class TestPythonBatchFileSystem(unittest.TestCase):
         mod_after = stat.S_IMODE(os.stat(file_to_chmod).st_mode)
         self.assertEqual(new_mode, mod_after, f"{self.pbt.which_test}: failed to chmod to {utils.unix_permissions_to_str(new_mode)} got {utils.unix_permissions_to_str(mod_after)}")
 
+    def test_chmod_non_recursive_for_all_users_win(self):
+        if sys.platform != 'win32':
+            return
+        folder_name = "chmod-test-folder"
+        folder_to_chmod = self.pbt.path_inside_test_folder(folder_name)
+        initial_mode_str = "a+rw"
+        # create the folder
+        self.pbt.batch_accum.clear(section_name="doit")
+        self.pbt.batch_accum += MakeDir(folder_to_chmod)
+        self.pbt.batch_accum += Chmod(path=folder_to_chmod, mode=initial_mode_str, recursive=False)
+        self.pbt.exec_and_capture_output()
+        self.assertTrue(os.access(folder_to_chmod.absolute(), os.R_OK)) # Check for read access
+        self.assertTrue(os.access(folder_to_chmod.absolute(), os.W_OK))  # Check for write access
+        self.assertTrue(os.access(folder_to_chmod.absolute(), os.X_OK | os.W_OK)) # Check if we can write file to the directory
+
+
+
+
     def test_Chmod_recursive(self):
         """ test Chmod recursive
             A file is created and it's permissions are changed several times
@@ -574,9 +592,75 @@ class TestPythonBatchFileSystem(unittest.TestCase):
         are_files_the_same = filecmp.cmp(file_to_split_before, file_to_split, shallow=False)
         self.assertTrue(are_files_the_same, f"{self.pbt.which_test}: before split and after join fies are not the same")
 
-    def test_something(self):
-        the_file = "C:\\ProgramData\\Waves Audio\\Central\\V10\\new_require.yaml"
+    def test_Glober_repr(self):
+        self.pbt.reprs_test_runner(Glober('rumba/*', Print, "shoshana"),
+                                   Glober('rumba/*', Print, "shoshana", "banana"),
+                                   Glober('rumba/*', Print, "shoshana", "dana", "banana"),
+                                   Glober('rumba/*', Print, "shoshana", arg_one=1, arg_two=2),
+                                   Glober('rumba/*', Print, "shoshana", "dana", "banana", arg_one=1, arg_two=2)
+                                   )
+
+    def test_Glober(self):
+        file_to_remove_1: Path = self.pbt.path_inside_test_folder("file_to_remove_1")
+        file_to_remove_2: Path = self.pbt.path_inside_test_folder("file_to_remove_2")
+        file_to_stay_1: Path = self.pbt.path_inside_test_folder("file_to_stay_1")
+        file_to_stay_2: Path = self.pbt.path_inside_test_folder("file_to_stay_2")
+        united_file: Path = self.pbt.path_inside_test_folder("united_file")
+
+        # create the files
         self.pbt.batch_accum.clear(section_name="doit")
-        self.pbt.batch_accum += Chmod(the_file, "ugo+rw")
+        self.pbt.batch_accum += Touch(file_to_remove_1)
+        self.pbt.batch_accum += Touch(file_to_remove_2)
+        self.pbt.batch_accum += MakeRandomDataFile(file_to_stay_1, 68)
+        self.pbt.batch_accum += MakeRandomDataFile(file_to_stay_2, 32)
         self.pbt.exec_and_capture_output()
+        # check files were created
+        self.assertTrue(file_to_remove_1.exists(), f"file not created {file_to_remove_1}")
+        self.assertTrue(file_to_remove_2.exists(), f"file not created {file_to_remove_2}")
+        self.assertTrue(file_to_stay_1.exists(), f"file not created {file_to_stay_1}")
+        self.assertTrue(file_to_stay_2.exists(), f"file not created {file_to_stay_2}")
+        self.assertFalse(united_file.exists(), f"file should not exist {united_file}")
+
+        # test will:
+        # 1) remove some files with a glob pattern.
+        # 2) unite some files with another pattern and check expected size of new file
+        # 3) run a glob that  matches nothing to make sure Glober can handler this as well
+        self.pbt.batch_accum.clear(section_name="doit")
+        to_stay_glob = os.fspath(self.pbt.test_folder.joinpath("file_to_stay*"))
+        to_remove_glob = os.fspath(self.pbt.test_folder.joinpath("file_to_remove*"))
+        no_match_glob = os.fspath(self.pbt.test_folder.joinpath("no_match*"))
+
+        self.pbt.batch_accum += Glober(to_stay_glob,
+                                       AppendFileToFile,
+                                       None,
+                                       united_file)
+        self.pbt.batch_accum += Glober(to_remove_glob,
+                                       RmFile,
+                                       "path")
+        self.pbt.batch_accum += Glober(no_match_glob,
+                                       RmFile,
+                                       "path")
+        self.pbt.batch_accum += Glober(r"""$(NATIVE_INSTRUMENTS_SERVICE_CENTER_DIR)/Waves-*""", Chmod, None, "a+rw")
+        self.pbt.batch_accum += Glober(r"""$(NATIVE_INSTRUMENTS_SERVICE_CENTER_DIR)/Waves-*""", Chown, "path",
+                 user_id=int(config_vars.get("ACTING_UID", -1)), group_id=int(config_vars.get("ACTING_GID", -1)))
+        self.pbt.batch_accum += Glober(r"""$(WAVESHELL_AAX_DIR)/WaveShell*.aaxplugin""", Chown, "path",
+                 user_id=int(config_vars.get("ACTING_UID", -1)), group_id=int(config_vars.get("ACTING_GID", -1)),
+                 recursive=True)
+        self.pbt.batch_accum += Glober(r"""$(WAVESHELL_AAX_DIR)/WaveShell*.aaxplugin""", Chmod, None, "a+rwX", recursive=True)
+
+        self.pbt.exec_and_capture_output()
+        self.assertFalse(file_to_remove_1.exists(), f"file not created {file_to_remove_1}")
+        self.assertFalse(file_to_remove_2.exists(), f"file not created {file_to_remove_2}")
+        self.assertTrue(file_to_stay_1.exists(), f"file not created {file_to_stay_1}")
+        self.assertTrue(file_to_stay_2.exists(), f"file not created {file_to_stay_2}")
+        self.assertEqual(united_file.stat().st_size, 100, f"united file, wrong size {united_file.stat().st_size}")
+
+    def test_something(self):
+        the_folder = Path("C:\\Program Files (x86)\\Common Files\\WPAPI")
+        # self.pbt.batch_accum.clear(section_name="doit")
+        # self.pbt.batch_accum += RmDir(the_folder)
+        self.pbt.batch_accum += MakeDir(the_folder, chowner=True)
+        self.pbt.exec_and_capture_output()
+
+        self.assertTrue(the_folder.is_dir(), f"folder {the_folder} was not created")
 

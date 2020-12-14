@@ -5,11 +5,15 @@ import datetime
 import inspect
 from pathlib import Path
 from _collections import defaultdict
+import shutil
+import logging
 
 import utils
 from configVar import config_vars
 from db.indexItemTable import IndexItemsTable
 from svnTree import SVNTable
+
+log = logging.getLogger()
 
 """
     todo:
@@ -101,6 +105,7 @@ class DBMaster(object):
                 #self.progress(f"reused existing db file {db_base_self.db_file_path}")
 
     def set_db_file_owner(self):
+        # utils.add_to_actions_stack(f"""chmod db path {self.db_file_path} '""")
         if not self.memory_db and self.db_file_path.is_file():
             utils.chown_chmod_on_path(self.db_file_path)
 
@@ -110,7 +115,7 @@ class DBMaster(object):
         #self.__conn.set_authorizer(self.authorizer_handler_sqlite3)
         #self.__conn.set_progress_handler(self.progress_handler_sqlite3, 8)
         self.__conn.row_factory = sqlite3.Row
-        self.__conn.set_trace_callback(self.trace_handler_sqlite3)
+        self.__conn.set_trace_callback(None)
 
     def authorizer_handler_sqlite3(self, *args, **kwargs):
         """ callback for sqlite3.connection.set_authorizer"""
@@ -119,10 +124,6 @@ class DBMaster(object):
     def set_progress_handler(self, progress_callback, n_instructions):
         """ callback for sqlite3.connection.set_progress_handler"""
         self.__conn.set_progress_handler(progress_callback, n_instructions)
-
-    def trace_handler_sqlite3(self, statement):
-        """ callback for sqlite3.connection.set_trace_callback"""
-        self.logger.debug('DB statement %s' % (statement))
 
     def create_function(self, func_name, num_params, func_ptr):
         self.__conn.create_function(func_name, num_params, func_ptr)
@@ -185,16 +186,17 @@ class DBMaster(object):
         return self.__curs
 
     class ProgressCallBacker:
-        def __init__(self, db_master, _description, _progress_callback):
+        def __init__(self, db_master, _description, _progress_callback, _n_instructions):
             self.db_master = db_master
             self.description = _description
             self.progress_callback = _progress_callback
+            self.n_instructions = _n_instructions
             self.counter = 0
 
         def __enter__(self):
             if self.progress_callback:
                 self.progress_callback(f"{self.description} {self.counter}")
-                self.db_master.set_progress_handler(self, 50 * 1024 * 1024)
+                self.db_master.set_progress_handler(self, self.n_instructions)
 
         def __exit__(self, exc_type, exc_val, exc_tb):
             if self.progress_callback:
@@ -205,7 +207,7 @@ class DBMaster(object):
             self.progress_callback(f"{self.description} {self.counter}")
 
     @contextmanager
-    def transaction(self, description=None, progress_callback=None):
+    def transaction(self, description=None, progress_callback=None, progress_callback_n_instructions=50*1024*1024):
         try:
 
             if not description:
@@ -213,7 +215,7 @@ class DBMaster(object):
                     description = inspect.stack()[2][3]
                 except IndexError as ex:
                     description = "unknown"
-            with self.ProgressCallBacker(self, description, progress_callback):
+            with self.ProgressCallBacker(self, description, progress_callback, progress_callback_n_instructions):
                 #time1 = time.perf_counter()
                 self.begin()
                 yield self.__curs
@@ -222,19 +224,23 @@ class DBMaster(object):
                 #if self.print_execute_times:
                 #    print('DB transaction %s took %0.3f ms' % (description, (time2-time1)*1000.0))
                 #self.statistics[description].add_instance((time2-time1)*1000.0)
+        except sqlite3.OperationalError as s3oo:
+            if not self.memory_db:
+                log.error("database error, disk %s", str(shutil.disk_usage(self.db_file_path.parent)), exc_info=True)
+            self.rollback()
         except:
             self.rollback()
             raise
 
     @contextmanager
-    def selection(self, description=None, progress_callback=None):
+    def selection(self, description=None, progress_callback=None, progress_callback_n_instructions=50*1024*1024):
         """ returns a cursor for SELECT queries.
             no commit is done
         """
         try:
             if not description:
                 description = inspect.stack()[2][3]
-            with self.ProgressCallBacker(self, description, progress_callback):
+            with self.ProgressCallBacker(self, description, progress_callback, progress_callback_n_instructions):
                 #time1 = time.perf_counter()
                 yield self.__conn.cursor()
                 #time2 = time.perf_counter()
@@ -247,14 +253,14 @@ class DBMaster(object):
             raise
 
     @contextmanager
-    def temp_transaction(self, description=None, progress_callback=None):
+    def temp_transaction(self, description=None, progress_callback=None, progress_callback_n_instructions=50*1024*1024):
         """ returns a cursor for working with CREATE TEMP TABLE.
             no commit is done
         """
         try:
             if not description:
                 description = inspect.stack()[2][3]
-            with self.ProgressCallBacker(self, description, progress_callback):
+            with self.ProgressCallBacker(self, description, progress_callback, progress_callback_n_instructions):
                 #time1 = time.perf_counter()
                 yield self.__conn.cursor()
                 #time2 = time.perf_counter()
@@ -401,8 +407,8 @@ class DBAccess(object):
                 # if no output file try next to the input file
                 db_base_path = Path(config_vars.resolve_str("$(__MAIN_INPUT_FILE__)-$(__MAIN_COMMAND__)"))
             else:
-                # as last resort try the Logs folder on desktop if one exists
-                logs_dir = Path(os.path.expanduser("~"), "Desktop", "Logs")
+                # as last resort try the Logs folder
+                logs_dir = utils.get_system_log_folder_path()
                 if logs_dir.is_dir():
                     db_base_path = logs_dir.joinpath(config_vars.resolve_str("instl-$(__MAIN_COMMAND__)"))
 
@@ -410,19 +416,27 @@ class DBAccess(object):
                 # set the proper extension
                 db_base_path = db_base_path.parent.joinpath(db_base_path.name+config_vars.resolve_str(".$(DB_FILE_EXT)"))
                 config_vars["__MAIN_DB_FILE__"] = db_base_path
-
+        log.info(f'DB FILE: {config_vars["__MAIN_DB_FILE__"].str()}')
         if self._owner.refresh_db_file:
-            db_base_path = config_vars["__MAIN_DB_FILE__"].Path()
-            if db_base_path.is_file():
-                utils.safe_remove_file(db_base_path)
+            if config_vars["__MAIN_DB_FILE__"].str() != ":memory:":
+                db_base_path = config_vars["__MAIN_DB_FILE__"].Path()
+                if db_base_path.is_file():
+                    utils.safe_remove_file(db_base_path)
+                    log.info(f'DB FILE REMOVED: {config_vars["__MAIN_DB_FILE__"].str()}')
+                else:
+                    log.info(f'DB FILE DOES NOT EXIST: {config_vars["__MAIN_DB_FILE__"].str()}')
+
+
+
+
 
 
 class TableAccess(object):
-    def __init__(self, type):
+    def __init__(self, _type):
         self._table = None
         self._owner = None  # for reference and debugging
         self._name = None   # for reference and debugging
-        self._type = type
+        self._type = _type
 
     def __set_name__(self, owner, name):
         self._owner = owner
