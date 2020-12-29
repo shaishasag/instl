@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List
 
 import logging
+import subprocess
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class MacDock(PythonBatchCommandBase):
         if self.remove:
             app_name = self.label_for_item or Path(self.path_to_item).name.split(".")[0]
             get_records_number = f"awk '/{app_name}/" + " {print NR-1}'"
-            dock_cmd = f'''{plist_buddy_path} -c "Delete persistent-apps:`defaults read {dock_bundle} persistent-apps | grep file-label |''' + \
+            dock_cmd = f'''{plist_buddy_path} -c "Delete persistent-apps:`defaults read {dock_bundle} persistent-apps| grep file-label |''' + \
                        get_records_number + \
                        f'''`" {mac_dock_path} ; ''' + \
                        dock_cmd
@@ -60,7 +61,12 @@ class MacDock(PythonBatchCommandBase):
                                       <integer>0</integer></dict></dict></dict>"'''
             dock_cmd = f'''defaults write {dock_bundle} persistent-apps -array-add {plist_template}  ; {dock_cmd}'''
 
+        dock_cmd = f"{dock_cmd} 2>&1 > /tmp/dockres.log"
         os.system(dock_cmd)
+        # dock_handle = subprocess.Popen([dock_cmd],executable=dock_cmd, preexec_fn=os.setsid)  # Unix
+        # unused_stdout, unused_stderr = dock_handle.communicate()
+        # proc = subprocess.run([dock_cmd], stdout=subprocess.PIPE)
+        # print (unused_stdout)
 
 
 class CreateSymlink(PythonBatchCommandBase):
