@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import List
 
 import logging
+
+from utils import dock_util
 from .subprocessBatchCommands import ShellCommand
 log = logging.getLogger(__name__)
 
@@ -38,19 +40,21 @@ class MacDock(PythonBatchCommandBase):
     def __call__(self, *args, **kwargs) -> None:
         PythonBatchCommandBase.__call__(self, *args, **kwargs)
 
+        home_dir = Path.home()
+        log.info(f"home dir is {home_dir}")
         dock_bundle = 'com.apple.dock'
         plist_buddy_path = "/usr/libexec/PlistBuddy"
-        mac_dock_path = "~/Library/Preferences/com.apple.dock.plist"
-
+        mac_dock_path = f"{home_dir}/Library/Preferences/com.apple.dock.plist"
         if self.restart_the_doc:
             dock_cmd = "killall Dock"
         else:
             dock_cmd = ''
 
+
         if self.remove:
             app_name = self.label_for_item or Path(self.path_to_item).name.split(".")[0]
             get_records_number = f"awk '/{app_name}/" + " {print NR-1}'"
-            dock_cmd = f'''{plist_buddy_path} -c "Delete persistent-apps:`defaults read {dock_bundle} persistent-apps| grep file-label |''' + \
+            dock_cmd = f'''{plist_buddy_path} -c "Delete persistent-apps:`defaults read {dock_bundle} persistent-apps | grep file-label |''' + \
                        get_records_number + \
                        f'''`" {mac_dock_path} ; ''' + \
                        dock_cmd
@@ -60,7 +64,7 @@ class MacDock(PythonBatchCommandBase):
                                       <integer>0</integer></dict></dict></dict>"'''
             dock_cmd = f'''defaults write {dock_bundle} persistent-apps -array-add {plist_template}  ; {dock_cmd}'''
 
-        print(dock_cmd)
+        log.info(dock_cmd)
         with ShellCommand(dock_cmd) as shell_cmd_mack:
             shell_cmd_mack()
 
