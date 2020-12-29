@@ -4,8 +4,7 @@ from pathlib import Path
 from typing import List
 
 import logging
-import subprocess
-
+from .subprocessBatchCommands import ShellCommand
 log = logging.getLogger(__name__)
 
 from .baseClasses import PythonBatchCommandBase
@@ -61,12 +60,9 @@ class MacDock(PythonBatchCommandBase):
                                       <integer>0</integer></dict></dict></dict>"'''
             dock_cmd = f'''defaults write {dock_bundle} persistent-apps -array-add {plist_template}  ; {dock_cmd}'''
 
-        dock_cmd = f"{dock_cmd} 2>&1 > /tmp/dockres.log"
-        os.system(dock_cmd)
-        # dock_handle = subprocess.Popen([dock_cmd],executable=dock_cmd, preexec_fn=os.setsid)  # Unix
-        # unused_stdout, unused_stderr = dock_handle.communicate()
-        # proc = subprocess.run([dock_cmd], stdout=subprocess.PIPE)
-        # print (unused_stdout)
+        print(dock_cmd)
+        with ShellCommand(dock_cmd) as shell_cmd_mack:
+            shell_cmd_mack()
 
 
 class CreateSymlink(PythonBatchCommandBase):
